@@ -1,0 +1,18 @@
+# for-development-only ################################################################
+# 
+# wheel
+# pip-review
+# pyinstaller
+# ruff
+
+
+# prerequisite, required-to-work ######################################################
+
+aioquic
+cachetools
+cryptography
+dnspython
+httpx
+idna
+pyyaml
+sqlalchemy
