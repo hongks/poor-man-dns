@@ -46,7 +46,7 @@ class Config:
 
     class Logging:
         def __init__(self):
-            self.filename = "poor_man_dns.log"
+            self.filename = "poor-man-dns.log"
             self.format = "[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
             self.level = "INFO"
 
