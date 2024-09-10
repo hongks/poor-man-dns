@@ -60,9 +60,13 @@ class DNSHandler(socketserver.BaseRequestHandler):
             logging.debug(f"{self.client_address} received: {query_name} {query_type}")
 
         except Exception as e:
+            response = dns.message.Message()
+            response.set_rcode(dns.rcode.FORMERR)
+
             logging.error(
                 f"{self.client_address} error invalid query:\n{e}\n{self.request}"
             )
+            self.send_response = (socket, response)
             return
 
         if query_name in self.server.blocked_domains:
