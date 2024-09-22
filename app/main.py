@@ -19,17 +19,19 @@ from helpers.sqlite import SQLite
 
 
 def main():
-    cfg = Config()
-    session = SQLite().session(cfg)
-    adsblock = AdsBlock(session, cfg.adsblock.reload)
+    config = Config()
+    sqlite = SQLite(config.sqlite_uri)
+
+    config.sync(sqlite.session)
+    adsblock = AdsBlock(sqlite, config.adsblock.reload)
 
     # set up logging
     logging.basicConfig(
-        format=cfg.logging.format,
-        level=logging.getLevelName(cfg.logging.level),
+        format=config.logging.format,
+        level=logging.getLevelName(config.logging.level),
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(cfg.logging.filename, mode="w"),
+            logging.FileHandler(config.logging.filename, mode="w"),
         ],
     )
 
@@ -40,28 +42,27 @@ def main():
     logging.info("initialized!")
 
     adapter = Adapter()
-    adapter.get_dns(cfg.dns.interface_name)
+    adapter.get_dns(config.dns.interface)
 
-    if cfg.cache.enable:
-        cfg.cache.cache = cachetools.TTLCache(
-            maxsize=cfg.cache.max_size, ttl=cfg.cache.ttl
+    if config.cache.enable:
+        config.cache.cache = cachetools.TTLCache(
+            maxsize=config.cache.max_size, ttl=config.cache.ttl
         )
 
     logging.info(
-        f"cache-enable: {str(cfg.cache.enable).lower()}"
-        + f", max-size: {cfg.cache.max_size}, ttl: {cfg.cache.ttl}"
+        f"cache-enable: {str(config.cache.enable).lower()}"
+        + f", max-size: {config.cache.max_size}, ttl: {config.cache.ttl}"
     )
+
+    httpd = None
+    server = None
 
     try:
         server = DNSServer(
-            (cfg.dns.listen_on, cfg.dns.listen_port),
-            DNSHandler,
-            adsblock.blocked_domains,
-            cfg.cache,
-            cfg.dns.target_hostname,
+            DNSHandler, config.cache, config.dns, adsblock.blocked_domains
         )
         logging.info(
-            f"local dns server running on {cfg.dns.listen_on}:{cfg.dns.listen_port}"
+            f"local dns server running on {config.dns.hostname}:{config.dns.port}"
         )
         # server.serve_forever()
 
@@ -70,34 +71,36 @@ def main():
         threads.start()
 
         # set up a list of domains to be blocked
-        adsblock.load_lists(cfg.adsblock.list_uri)
-        adsblock.load_custom(cfg.adsblock.custom)
-        adsblock.load_whitelist(cfg.adsblock.whitelist)
+        adsblock.load_blacklist(config.adsblock.blacklist)
+        adsblock.load_custom(config.adsblock.custom)
+        adsblock.load_whitelist(config.adsblock.whitelist)
         server.blocked_domains = adsblock.blocked_domains
 
-        httpd = HTTPServer((cfg.doh.listen_on, cfg.doh.listen_port), DOHHandler)
+        httpd = HTTPServer((config.doh.hostname, config.doh.port), DOHHandler)
         httpd.blocked_domains = adsblock.blocked_domains
-        httpd.cache_enable = cfg.cache.enable
-        httpd.cache_wip = cfg.cache.wip
-        httpd.cache = cfg.cache.cache
-        httpd.target_hostname = cfg.dns.target_hostname
+        httpd.cache_enable = config.cache.enable
+        httpd.cache_wip = config.cache.wip
+        httpd.cache = config.cache.cache
+        httpd.dns_custom = config.dns.custom
+        httpd.target_doh = config.dns.target_doh
+        httpd.target_mode = config.dns.target_mode
 
         context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         context.load_cert_chain(certfile="certs/cert.pem", keyfile="certs/key.pem")
         httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
 
         logging.info(
-            f"local doh server running on {cfg.doh.listen_on}:{cfg.doh.listen_port}"
+            f"local doh server running on {config.doh.hostname}:{config.doh.port}"
         )
         httpd.serve_forever()
 
     except KeyboardInterrupt:
-        server.shutdown()
         httpd.shutdown()
+        server.shutdown()
 
     # adapter.reset_dns(cfg.dns.interface_name)
 
-    session.close()
+    sqlite.session.close()
     logging.info("sayonara!")
 
 

@@ -4,10 +4,10 @@ from sqlalchemy import Boolean, Column, DateTime, Integer, Text, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
-base = declarative_base()
+Base = declarative_base()
 
 
-class AdsBlockList(base):
+class AdsBlockList(Base):
     __tablename__ = "adsblock_lists"
 
     id = Column(Integer, primary_key=True)
@@ -19,7 +19,7 @@ class AdsBlockList(base):
     updated_on = Column(DateTime)
 
 
-class AdsBlockDomain(base):
+class AdsBlockDomain(Base):
     __tablename__ = "adsblock_domains"
 
     id = Column(Integer, primary_key=True)
@@ -30,7 +30,7 @@ class AdsBlockDomain(base):
     updated_on = Column(DateTime)
 
 
-class AdsBlockLog(base):
+class AdsBlockLog(Base):
     __tablename__ = "adblock_logs"
 
     id = Column(Integer, primary_key=True)
@@ -40,7 +40,7 @@ class AdsBlockLog(base):
     updated_on = Column(DateTime)
 
 
-class Setting(base):
+class Setting(Base):
     __tablename__ = "settings"
 
     id = Column(Integer, primary_key=True)
@@ -51,31 +51,28 @@ class Setting(base):
 
 
 class SQLite:
-    def session(self, configs):
-        engine = create_engine(configs.sqlite_uri)
-        base.metadata.create_all(engine)
+    def __init__(self, uri):
+        engine = create_engine(uri)
+        Base.metadata.create_all(engine)
 
         Session = sessionmaker(bind=engine)
-        session = Session()
+        self.session = Session()
 
-        # in case configs file is different
-        row = session.query(Setting).filter_by(key="config_sha256").first()
+    def update(self, key, value):
+        row = self.session.query(Setting).filter_by(key=key).first()
         dt = datetime.utcnow()
-        sha256 = configs.load()
 
-        if row and sha256:
-            if sha256 != row.value:
-                row.value = sha256
-                row.updated_on = dt
+        if row:
+            row.value = value
+            row.updated_on = dt
 
         else:
             row = Setting(
-                key="config_sha256",
-                value=sha256,
+                key=key,
+                value=value,
                 created_on=dt,
                 updated_on=dt,
             )
-            session.add(row)
+            self.session.add(row)
 
-        session.commit()
-        return session
+        self.session.commit()

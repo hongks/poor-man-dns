@@ -9,8 +9,8 @@ class Adapter:
 
     def supported_platform(self):
         supported = False
-
         os = platform.system().lower()
+
         if os == "windows":
             supported = True
         else:
@@ -38,6 +38,7 @@ class Adapter:
                 ],
                 check=True,
             )
+
             logging.info(f"set {adapter} primary DNS set to {primary_dns}")
 
         except subprocess.CalledProcessError as err:
@@ -55,6 +56,7 @@ class Adapter:
                 text=True,
                 check=True,
             )
+
             logging.info(
                 f"current {adapter.lower()} dns configuration:\n{result.stdout}"
             )
@@ -72,6 +74,7 @@ class Adapter:
                 ["netsh", "interface", "ipv4", "set", "dns", adapter, "dhcp"],
                 check=True,
             )
+
             logging.info(f"reset {adapter} DNS settings to automatic.")
 
         except subprocess.CalledProcessError as err:

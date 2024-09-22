@@ -1,23 +1,29 @@
 import hashlib
+import socket
 
+from datetime import datetime
 from pathlib import Path
 
 import yaml
 
+from .sqlite import Setting
+
+
+class Base:
+    def __str__(self):
+        return str([{i: f"{self.__dict__[i]}"} for i in self.__dict__])
+
 
 # default configs, overide as needed
-class Config:
-    class AdsBlock:
+class Config(Base):
+    class AdsBlock(Base):
         def __init__(self):
+            self.blacklist = (["https://v.firebog.net/hosts/easyprivacy.txt"],)
             self.custom = []
-            self.list_uri = (["https://v.firebog.net/hosts/easyprivacy.txt"],)
             self.reload = False
             self.whitelist = []
 
-        def __str__(self):
-            return str([{i: f"{self.__dict__[i]}"} for i in self.__dict__])
-
-    class Cache:
+    class Cache(Base):
         def __init__(self):
             self.cache = None
             self.enable = True
@@ -25,33 +31,30 @@ class Config:
             self.ttl = 180
             self.wip = set()
 
-        def __str__(self):
-            return str([{i: f"{self.__dict__[i]}"} for i in self.__dict__])
-
-    class DNS:
+    class DNS(Base):
         def __init__(self):
-            self.listen_on = "127.0.0.1"
-            self.listen_port = 53
+            self.hostname = "127.0.0.1"
+            self.port = 53
 
-            self.interface_name = "wi-fi"
-            self.target_hostname = ["https://1.1.1.1/dns-query"]
+            self.interface = "wi-fi"
+            self.target_doh = ["https://1.1.1.1/dns-query"]
+            self.target_mode = "dns-message"
 
-        def __str__(self):
-            return str([{i: f"{self.__dict__[i]}"} for i in self.__dict__])
+            self.custom = {
+                "localhost": "127.0.0.1",
+                socket.gethostname().lower(): "127.0.0.1",
+            }
 
-    class DOH:
+    class DOH(Base):
         def __init__(self):
-            self.listen_on = "0.0.0.0"
-            self.listen_port = 5053
+            self.hostname = "0.0.0.0"
+            self.port = 5053
 
-    class Logging:
+    class Logging(Base):
         def __init__(self):
             self.filename = "poor-man-dns.log"
             self.format = "[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
             self.level = "INFO"
-
-        def __str__(self):
-            return str([{i: f"{self.__dict__[i]}"} for i in self.__dict__])
 
     def __init__(self):
         self.filename = "config.yml"
@@ -63,9 +66,6 @@ class Config:
         self.dns = self.DNS()
         self.doh = self.DOH()
         self.logging = self.Logging()
-
-    def __str__(self):
-        return str([{i: f"{self.__dict__[i]}"} for i in self.__dict__])
 
     # override default configs
     def load(self):
@@ -83,8 +83,8 @@ class Config:
         with open(self.filename, "r") as f:
             configs = yaml.load(f, Loader=yaml.loader.SafeLoader)
 
+            self.adsblock.blacklist = sorted(configs["adblock"]["blacklist"])
             self.adsblock.custom = configs["adblock"]["custom"]
-            self.adsblock.list_uri = configs["adblock"]["list_uri"]
             self.adsblock.reload = configs["adblock"]["reload"]
             self.adsblock.whitelist = configs["adblock"]["whitelist"]
 
@@ -92,14 +92,44 @@ class Config:
             self.cache.max_size = configs["cache"]["max_size"]
             self.cache.ttl = configs["cache"]["ttl"]
 
-            self.dns.listen_on = configs["dns"]["listen_on"]
-            self.dns.listen_port = configs["dns"]["listen_port"]
-            self.dns.interface_name = configs["dns"]["interface_name"]
-            self.dns.target_hostname = configs["dns"]["target_hostname"]
+            self.dns.hostname = configs["dns"]["hostname"]
+            self.dns.port = configs["dns"]["port"]
+            self.dns.interface = configs["dns"]["interface"]
+            self.dns.target_doh = configs["dns"]["target_doh"]
+            self.dns.target_mode = configs["dns"]["target_mode"]
 
-            self.doh.listen_on = configs["doh"]["listen_on"]
-            self.doh.listen_port = configs["doh"]["listen_port"]
+            buffers = {socket.gethostname().lower(): "127.0.0.1"}
+            for item in configs["dns"]["custom"]:
+                key, value = item.split(":")
+                buffers[key.lower()] = value
+
+            self.dns.custom = sorted(set(buffers))
+
+            self.doh.hostname = configs["doh"]["hostname"]
+            self.doh.port = configs["doh"]["port"]
 
             self.logging.level = configs["logging"]["level"].upper()
 
         return sha256.hexdigest()
+
+    # in case config file is different
+    def sync(self, session):
+        row = session.query(Setting).filter_by(key="config-sha256").first()
+        dt = datetime.utcnow()
+
+        sha256 = self.load()
+        if row and sha256:
+            if sha256 != row.value:
+                row.value = sha256
+                row.updated_on = dt
+
+        else:
+            row = Setting(
+                key="config-sha256",
+                value=sha256,
+                created_on=dt,
+                updated_on=dt,
+            )
+            session.add(row)
+
+        session.commit()

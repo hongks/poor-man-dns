@@ -1,4 +1,5 @@
 import logging
+import time
 
 from datetime import datetime, timedelta
 
@@ -8,46 +9,19 @@ from .sqlite import AdsBlockList, Setting
 
 
 class AdsBlock:
-    def update_adsblock_settings(self, key, value):
-        row = self.session.query(Setting).filter_by(key=key).first()
-        dt = datetime.utcnow()
-
-        if row:
-            row.value = value
-            row.updated_on = dt
-
-        else:
-            row = Setting(
-                key=key,
-                value=value,
-                created_on=dt,
-                updated_on=dt,
-            )
-            self.session.add(row)
-
-        self.session.commit()
-
-    def __init__(self, session, reload=False):
+    def __init__(self, sqlite, reload=False):
         self.blocked_domains = set()
         self.total_domains = 0
 
         self.reload = reload
-        self.session = session
+        self.session = sqlite.session
+        self.sqlite = sqlite
 
-    def load_custom(self, lists):
-        count = 0
-        for domain in lists:
-            if domain:
-                count += 1
-                self.blocked_domains.add(f"{domain}.")
-
-        logging.info(f"loaded custom blacklist, {count}!")
-
-    def load_lists(self, lists):
-        logging.info(f"loading {len(lists)} adblock lists ...")
+    def load_blacklist(self, urls):
+        logging.info(f"loading {len(urls)} adblock lists ...")
 
         # cache freshness
-        row = self.session.query(Setting).filter_by(key="blocked_stats").first()
+        row = self.session.query(Setting).filter_by(key="blocked-stats").first()
         stats = None
 
         if (
@@ -55,30 +29,56 @@ class AdsBlock:
             or self.reload
             or datetime.utcnow().date() > (row.updated_on + timedelta(days=1)).date()
         ):
-            for url in lists:
-                self.load(url)
+            with httpx.Client(verify=False, timeout=9.0) as client:
+                buffers = []
+
+                for url in urls:
+                    count = 0
+
+                    while count < 2:
+                        try:
+                            response = client.get(url)
+                            response.raise_for_status()
+
+                            buffers.append(self.parse(response))
+                            break
+
+                        except Exception as err:
+                            logging.error(f"unexpected {err=}, {type(err)=}, {url}")
+                            time.sleep(1)
+                            count += 1
+
+                self.sync(buffers)
 
             # blocked_stats
             stats = f"{len(self.blocked_domains)} out of {self.total_domains}"
-            self.update_adsblock_settings("blocked_stats", stats)
+            self.sqlite.update("blocked-stats", stats)
 
             # blocked_domains
             self.blocked_domains = sorted(self.blocked_domains)
-            self.update_adsblock_settings(
-                "blocked_domains", "\n".join(self.blocked_domains)
-            )
+            self.sqlite.update("blocked-domains", "\n".join(self.blocked_domains))
 
         else:
             # blocked_stats
             stats = row.value
 
             # blocked_domains
-            row = self.session.query(Setting).filter_by(key="blocked_domains").first()
-            self.blocked_domains = row.value.split("\n")
+            row = self.session.query(Setting).filter_by(key="blocked-domains").first()
+            self.blocked_domains = sorted(row.value.split("\n"))
 
             logging.info("++ cache less than a day old!")
 
         logging.info(f"... done, loaded {stats}!")
+
+    def load_custom(self, lists):
+        count = 0
+
+        for domain in lists:
+            if domain:
+                count += 1
+                self.blocked_domains.add(f"{domain}.")
+
+        logging.info(f"loaded custom blacklist, {count}!")
 
     def load_whitelist(self, lists):
         countA = 0
@@ -87,38 +87,44 @@ class AdsBlock:
         for domain in lists:
             if domain:
                 countB += 1
+
             if domain[:-1] in self.blocked_domains:
                 countA += 1
                 self.blocked_domains.remove(domain)
 
         logging.info(f"loaded whitelist, {countA} out of {countB}!")
 
-    def load(self, url):
-        try:
-            response = httpx.get(url, timeout=9)
-            response.raise_for_status()
+    def parse(self, response):
+        url = str(response.url)
+        count = 0
 
-            count = 0
-            for line in response.text.splitlines():
-                line = line.strip()
-                if line and not line.startswith(("!", "#")):
-                    domain = line.split()
-                    domain = (
-                        domain[1]
-                        if len(domain) > 1 and not domain[1].startswith("#")
-                        else domain[0]
-                    )
-                    domain = domain.replace("||", "").replace("^", "") + "."
+        for line in response.text.splitlines():
+            line = line.strip()
 
-                    count += 1
-                    self.blocked_domains.add(domain)
+            if line and not line.startswith(("!", "#")):
+                domain = line.split()
+                domain = (
+                    domain[1]
+                    if len(domain) > 1 and not domain[1].startswith("#")
+                    else domain[0]
+                )
+                domain = domain.replace("||", "").replace("^", "") + "."
 
-            self.total_domains += count
+                count += 1
+                self.blocked_domains.add(domain)
+
+        self.total_domains += count
+        logging.debug(f"++ {count}, {url}")
+
+        return [url, response.text, count]
+
+    def sync(self, buffers):
+        for url, contents, count in buffers:
             row = self.session.query(AdsBlockList).filter_by(url=url).first()
             dt = datetime.utcnow()
 
             if row:
-                row.contents = response.text
+                row.contents = contents
                 row.count = count
                 row.updated_on = dt
 
@@ -126,15 +132,12 @@ class AdsBlock:
                 row = AdsBlockList(
                     url=url,
                     is_active=True,
-                    contents=response.text,
+                    contents=contents,
                     count=count,
                     created_on=dt,
                     updated_on=dt,
                 )
+
                 self.session.add(row)
 
-            self.session.commit()
-            logging.debug(f"++ {count}, {url}")
-
-        except Exception as err:
-            logging.error(f"unexpected {err=}, {type(err)=}, {url}")
+        self.session.commit()

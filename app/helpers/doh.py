@@ -20,57 +20,109 @@ class DOHHandler(BaseHTTPRequestHandler):
         cache_keyname = f"{query_name}:{query_type}"
         logging.debug(f"{self.client_address} received: {query_name} {query_type}")
 
-        if query_name in self.server.blocked_domains:
+        # custom dns #############################################################
+        if query_name in self.server.dns_custom and query_type == "A":
             response = dns.message.make_response(dns_query)
-            response.set_rcode(dns.rcode.NXDOMAIN)
+            rrset = dns.rrset.from_text(
+                query_name,
+                300,
+                dns.rdataclass.IN,
+                dns.rdatatype.A,
+                self.server.dns_custom[query_name],
+            )
+            response.answer.append(rrset)
 
+            logging.info(f"{self.client_address} custom-hit: {query_name}")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/dns-message")
+            self.end_headers()
+
+            self.wfile.write(response.to_wire())
+            return
+
+        # blocked domain #########################################################
+        if query_name in self.server.blocked_domains:
             logging.info(f"{self.client_address} blacklisted: {query_name}")
             self.send_error(400, "bad request: blacklisted")
             return
 
+        # cache ##################################################################
         if self.server.cache_enable:
             if cache_keyname in self.server.cache_wip:
-                time.sleep(0.3)
+                time.sleep(1)
+            else:
+                self.server.cache_wip.add(cache_keyname)
 
             if cache_keyname in self.server.cache:
-                cached_response = self.server.cache[cache_keyname]
                 response = dns.message.make_response(dns_query)
-                response.answer = cached_response["response"]
+                response.answer = self.server.cache[cache_keyname]["response"]
 
                 logging.info(f"{self.client_address} cache-hit: {cache_keyname}")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/dns-message")
                 self.end_headers()
+
                 self.wfile.write(response.to_wire())
                 return
 
         try:
-            if cache_keyname not in self.server.cache_wip:
-                self.server.cache_wip.add(cache_keyname)
-
-            target_hostname = random.choice(self.server.target_hostname)
-            headers = {
-                "content-type": "application/dns-message",
-                "accept": "application/dns-message",
-                "accept-encoding": "gzip",
-            }
+            target_doh = random.choice(self.server.target_doh)
             logging.info(
-                f"{self.client_address} forward: {cache_keyname}, {target_hostname}"
+                f"{self.client_address} forward: {cache_keyname}, {target_doh}"
             )
 
-            doh_response = httpx.post(
-                target_hostname,
-                headers=headers,
-                content=dns_query.to_wire(),
-                timeout=10,
-            )
-            doh_response.raise_for_status()
+            if self.server.target_mode == "dns-json":
+                # dns-json #######################################################
+                headers = {
+                    "accept": "application/dns-json",
+                    "accept-encoding": "gzip",
+                }
+                params = {"name": query_name, "type": query_type}
 
-            response = dns.message.from_wire(doh_response.content)
+                doh_response = httpx.get(
+                    target_doh, headers=headers, params=params, timeout=9.0
+                )
+                doh_response.raise_for_status()
+
+                doh_response_json = doh_response.json()
+                response = dns.message.make_response(dns_query)
+
+                for answer in doh_response_json.get("Answer", []):
+                    rrset = dns.rrset.from_text(
+                        query_name,
+                        answer["TTL"],
+                        dns.rdataclass.IN,
+                        dns.rdatatype.from_text(
+                            dns.rdatatype.to_text(answer["type"]),
+                        ),
+                        answer["data"],
+                    )
+
+                    response.answer.append(rrset)
+
+            else:
+                # dns-message ####################################################
+                headers = {
+                    "content-type": "application/dns-message",
+                    "accept": "application/dns-message",
+                    "accept-encoding": "gzip",
+                }
+
+                doh_response = httpx.post(
+                    target_doh,
+                    headers=headers,
+                    content=dns_query.to_wire(),
+                    timeout=9.0,
+                )
+                doh_response.raise_for_status()
+
+                response = dns.message.from_wire(doh_response.content)
+
             logging.debug(
                 f"{self.client_address} response message: {response.to_text()}"
             )
 
+            # cache ##############################################################
             if self.server.cache_enable:
                 self.server.cache[cache_keyname] = {
                     "response": response.answer,
@@ -97,12 +149,13 @@ class DOHHandler(BaseHTTPRequestHandler):
 
         parsed_path = urlparse(self.path)
         params = parse_qs(parsed_path.query)
-
         dns_query_wire = params.get("dns", [None])[0]
+
         if not dns_query_wire:
             logging.error(
                 f"{self.client_address} error unsupported query:\n{self.path}"
             )
+
             self.send_error(400, "bad request: unsupported query")
             return
 
@@ -129,10 +182,12 @@ class DOHHandler(BaseHTTPRequestHandler):
         if self.headers.get("Content-Type") == "application/dns-message":
             content_length = int(self.headers.get("Content-Length", 0))
             data = self.rfile.read(content_length)
+
         else:
             logging.error(
                 f"{self.client_address} error unsupported query:\n{self.request}"
             )
+
             self.send_error(400, "bad request: unsupported query")
             return
 

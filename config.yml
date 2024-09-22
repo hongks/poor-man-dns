@@ -4,17 +4,22 @@ cache:
   ttl: 300
 
 dns:
-  listen_on: "127.0.0.1"
-  listen_port: 53
+  hostname: "127.0.0.1"
+  port: 53
 
-  interface_name: "wi-fi"
-  target_hostname:
+  interface: "wi-fi"
+
+  target_mode: dns-message
+  target_doh:
     - "https://1.1.1.1/dns-query"
     - "https://9.9.9.9:5053/dns-query"
 
+  custom:
+    - "localhost:127.0.0.1"
+
 doh:
-  listen_on: "0.0.0.0"
-  listen_port: 5053
+  hostname: "0.0.0.0"
+  port: 5053
 
 logging:
   level: "info"
@@ -27,7 +32,7 @@ adblock:
   whitelist:
     - ""
 
-  list_uri:
+  blacklist:
     # get it from https://firebog.net/
 
     # suspicious lists
