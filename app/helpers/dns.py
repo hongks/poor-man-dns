@@ -43,7 +43,7 @@ class DNSHandler(socketserver.BaseRequestHandler):
             return
 
         # custom dns #############################################################
-        if query_name in self.server.dns_custom and query_type == "A":
+        if query_name in self.server.dns_custom and query_type in ["PTR", "A"]:
             response = dns.message.make_response(dns_query)
             rrset = dns.rrset.from_text(
                 query_name,
@@ -54,7 +54,7 @@ class DNSHandler(socketserver.BaseRequestHandler):
             )
             response.answer.append(rrset)
 
-            logging.info(f"{self.client_address} custom-hit: {query_name}")
+            logging.info(f"{self.client_address} custom-hit: {cache_keyname}")
             self.send_response(socket, response)
             return
 
@@ -63,7 +63,7 @@ class DNSHandler(socketserver.BaseRequestHandler):
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.NXDOMAIN)
 
-            logging.info(f"{self.client_address} blacklisted: {query_name}")
+            logging.info(f"{self.client_address} blacklisted: {cache_keyname}")
             self.send_response(socket, response)
             return
 

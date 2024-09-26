@@ -41,8 +41,9 @@ class Config(Base):
             self.target_mode = "dns-message"
 
             self.custom = {
-                "localhost": "127.0.0.1",
-                socket.gethostname().lower(): "127.0.0.1",
+                "1.0.0.127.in-addr.arpa.": "127.0.0.1",
+                "localhost.": "127.0.0.1",
+                f"{socket.gethostname().lower()}.": "127.0.0.1",
             }
 
     class DOH(Base):
@@ -98,12 +99,14 @@ class Config(Base):
             self.dns.target_doh = configs["dns"]["target_doh"]
             self.dns.target_mode = configs["dns"]["target_mode"]
 
-            buffers = {socket.gethostname().lower(): "127.0.0.1"}
+            buffers = {"1.0.0.127.in-addr.arpa.": "127.0.0.1"}
+            buffers[f"{socket.gethostname().lower()}."] = "127.0.0.1"
+
             for item in configs["dns"]["custom"]:
                 key, value = item.split(":")
-                buffers[key.lower()] = value
+                buffers[f"{key.lower()}."] = value
 
-            self.dns.custom = sorted(set(buffers))
+            self.dns.custom = buffers
 
             self.doh.hostname = configs["doh"]["hostname"]
             self.doh.port = configs["doh"]["port"]
