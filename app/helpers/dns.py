@@ -18,6 +18,7 @@ class DNSHandler(socketserver.BaseRequestHandler):
 
     def handle(self):
         logging.debug(f"{self.client_address} request data: {self.request}")
+
         data = self.request[0].strip()
         socket = self.request[1]
 
@@ -37,7 +38,7 @@ class DNSHandler(socketserver.BaseRequestHandler):
             response.set_rcode(dns.rcode.FORMERR)
 
             logging.error(
-                f"{self.client_address} error invalid query:\n{e}\n{self.request}"
+                f"{self.client_address} error invalid query:\n{e}\n{self.request}\n{data}"
             )
             self.send_response(socket, response)
             return
@@ -70,7 +71,7 @@ class DNSHandler(socketserver.BaseRequestHandler):
         # cache ##################################################################
         if self.server.cache_enable:
             if cache_keyname in self.server.cache_wip:
-                time.sleep(1)
+                time.sleep(3)
             else:
                 self.server.cache_wip.add(cache_keyname)
 

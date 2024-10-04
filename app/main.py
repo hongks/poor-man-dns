@@ -1,10 +1,13 @@
 import logging
+import platform
+import os
 import ssl
 import threading
 
 from http.server import HTTPServer
 
 import cachetools
+import psutil
 
 from helpers.configs import Config
 from helpers.adapter import Adapter
@@ -54,8 +57,11 @@ def main():
         + f", max-size: {config.cache.max_size}, ttl: {config.cache.ttl}"
     )
 
-    httpd = None
-    server = None
+    p = psutil.Process(os.getpid())
+    if platform.system().lower() == "windows":
+        p.nice(psutil.HIGH_PRIORITY_CLASS)
+    else:
+        p.nice(5)
 
     try:
         server = DNSServer(
@@ -95,8 +101,7 @@ def main():
         httpd.serve_forever()
 
     except KeyboardInterrupt:
-        httpd.shutdown()
-        server.shutdown()
+        pass
 
     # adapter.reset_dns(cfg.dns.interface_name)
 

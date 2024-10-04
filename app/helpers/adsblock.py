@@ -25,17 +25,14 @@ class AdsBlock:
         stats = None
 
         if (
-            not row
-            or self.reload
+            not (row or self.reload)
             or datetime.utcnow().date() > (row.updated_on + timedelta(days=1)).date()
         ):
             with httpx.Client(verify=False, timeout=9.0) as client:
                 buffers = []
 
                 for url in urls:
-                    count = 0
-
-                    while count < 2:
+                    for i in range(2):
                         try:
                             response = client.get(url)
                             response.raise_for_status()
@@ -46,7 +43,6 @@ class AdsBlock:
                         except Exception as err:
                             logging.error(f"unexpected {err=}, {type(err)=}, {url}")
                             time.sleep(1)
-                            count += 1
 
                 self.sync(buffers)
 
@@ -76,23 +72,29 @@ class AdsBlock:
         for domain in lists:
             if domain:
                 count += 1
-                self.blocked_domains.add(f"{domain}.")
+
+                buffer = f"{domain}."
+                if buffer not in self.blocked_domains:
+                    self.blocked_domains.add(buffer)
+                    logging.debug(f"blacklisting {buffer}")
 
         logging.info(f"loaded custom blacklist, {count}!")
 
     def load_whitelist(self, lists):
-        countA = 0
-        countB = 0
+        count = 0
+        total = 0
 
         for domain in lists:
             if domain:
-                countB += 1
+                total += 1
+                buffer = f"{domain}."
 
-            if domain[:-1] in self.blocked_domains:
-                countA += 1
-                self.blocked_domains.remove(domain)
+                if buffer in self.blocked_domains:
+                    count += 1
+                    self.blocked_domains.remove(buffer)
+                    logging.debug(f"whitelisting {buffer}")
 
-        logging.info(f"loaded whitelist, {countA} out of {countB}!")
+        logging.info(f"loaded whitelist, {count} out of {total}!")
 
     def parse(self, response):
         url = str(response.url)
