@@ -54,7 +54,7 @@ class Config(Base):
     class Logging(Base):
         def __init__(self):
             self.filename = "poor-man-dns.log"
-            self.format = "[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
+            self.format = "%(asctime)s | %(levelname)s in %(module)s: %(message)s"
             self.level = "INFO"
 
     def __init__(self):
@@ -79,6 +79,7 @@ class Config(Base):
                 chunk = f.read(1000000)  # 1MB
                 if not chunk:
                     break
+
                 sha256.update(chunk)
 
         with open(self.filename, "r") as f:

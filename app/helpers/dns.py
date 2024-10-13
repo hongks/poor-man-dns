@@ -38,7 +38,8 @@ class DNSHandler(socketserver.BaseRequestHandler):
             response.set_rcode(dns.rcode.FORMERR)
 
             logging.error(
-                f"{self.client_address} error invalid query:\n{e}\n{self.request}\n{data}"
+                f"{self.client_address} error invalid query:\n{e}"
+                + f"\n{self.request}\n{data.hex()}"
             )
             self.send_response(socket, response)
             return
@@ -131,7 +132,7 @@ class DNSHandler(socketserver.BaseRequestHandler):
                     target_doh,
                     headers=headers,
                     content=dns_query.to_wire(),
-                    timeout=9.0,
+                    timeout=10.0,
                 )
                 doh_response.raise_for_status()
 
@@ -148,16 +149,20 @@ class DNSHandler(socketserver.BaseRequestHandler):
                     "timestamp": time.time(),
                 }
 
-                if cache_keyname in self.server.cache_wip:
-                    self.server.cache_wip.remove(cache_keyname)
-
         except Exception as e:
-            logging.error(f"{self.client_address} error unhandled: {e}")
+            logging.error(
+                f"{self.client_address} error unhandled: {e}"
+                + f"\n{cache_keyname}, {target_doh}"
+            )
 
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.SERVFAIL)
 
         finally:
+            if self.server.cache_enable:
+                if cache_keyname in self.server.cache_wip:
+                    self.server.cache_wip.remove(cache_keyname)
+
             self.send_response(socket, response)
 
 

@@ -1,6 +1,6 @@
 import logging
-import platform
 import os
+import platform
 import ssl
 import threading
 

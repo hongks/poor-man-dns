@@ -112,7 +112,7 @@ class DOHHandler(BaseHTTPRequestHandler):
                     target_doh,
                     headers=headers,
                     content=dns_query.to_wire(),
-                    timeout=9.0,
+                    timeout=10.0,
                 )
                 doh_response.raise_for_status()
 
