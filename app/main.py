@@ -64,6 +64,9 @@ def main():
         p.nice(5)
 
     try:
+        # load cache first!
+        adsblock.load_cache()
+
         server = DNSServer(
             DNSHandler, config.cache, config.dns, adsblock.blocked_domains
         )
@@ -76,7 +79,7 @@ def main():
         threads.daemon = True
         threads.start()
 
-        # set up a list of domains to be blocked
+        # re-set up the list of domains to be blocked
         adsblock.load_blacklist(config.adsblock.blacklist)
         adsblock.load_custom(config.adsblock.custom)
         adsblock.load_whitelist(config.adsblock.whitelist)

@@ -18,53 +18,55 @@ class AdsBlock:
         self.sqlite = sqlite
 
     def load_blacklist(self, urls):
-        logging.info(f"loading {len(urls)} adblock lists ...")
-
-        # cache freshness
         row = self.session.query(Setting).filter_by(key="blocked-stats").first()
-        stats = None
-
         if (
-            not (row or self.reload)
-            or datetime.utcnow().date() > (row.updated_on + timedelta(days=1)).date()
+            row
+            and datetime.utcnow().date() < (row.updated_on + timedelta(days=1)).date()
         ):
-            with httpx.Client(verify=False, timeout=9.0) as client:
-                buffers = []
+            return
 
-                for url in urls:
-                    for i in range(2):
-                        try:
-                            response = client.get(url)
-                            response.raise_for_status()
+        logging.info("generate new cache, empty or older than a day...")
+        logging.info(f"+ loading {len(urls)} adblock lists ...")
 
-                            buffers.append(self.parse(response))
-                            break
+        with httpx.Client(verify=False, timeout=9.0) as client:
+            buffers = []
 
-                        except Exception as err:
-                            logging.error(f"unexpected {err=}, {type(err)=}, {url}")
-                            time.sleep(1)
+            for url in urls:
+                for i in range(2):
+                    try:
+                        response = client.get(url)
+                        response.raise_for_status()
 
-                self.sync(buffers)
+                        buffers.append(self.parse(response))
+                        break
 
-            # blocked_stats
-            stats = f"{len(self.blocked_domains)} out of {self.total_domains}"
-            self.sqlite.update("blocked-stats", stats)
+                    except Exception as err:
+                        logging.error(f"unexpected {err=}, {type(err)=}, {url}")
+                        time.sleep(1)
 
-            # blocked_domains
-            self.blocked_domains = sorted(self.blocked_domains)
-            self.sqlite.update("blocked-domains", "\n".join(self.blocked_domains))
+            self.sync(buffers)
 
-        else:
-            # blocked_stats
-            stats = row.value
+        # blocked_stats
+        stats = f"{len(self.blocked_domains)} out of {self.total_domains}"
+        self.sqlite.update("blocked-stats", stats)
 
-            # blocked_domains
-            row = self.session.query(Setting).filter_by(key="blocked-domains").first()
+        # blocked_domains
+        self.blocked_domains = sorted(self.blocked_domains)
+        self.sqlite.update("blocked-domains", "\n".join(self.blocked_domains))
+
+        logging.info(f"+ done, loaded {stats}!")
+
+    def load_cache(self):
+        # blocked_stats
+        row = self.session.query(Setting).filter_by(key="blocked-stats").first()
+        stats = row.value if row else "0 out of 0"
+
+        # blocked_domains
+        row = self.session.query(Setting).filter_by(key="blocked-domains").first()
+        if row:
             self.blocked_domains = sorted(row.value.split("\n"))
 
-            logging.info("++ cache less than a day old!")
-
-        logging.info(f"... done, loaded {stats}!")
+        logging.info(f"loaded cached blocked domains, {stats}!")
 
     def load_custom(self, lists):
         count = 0
