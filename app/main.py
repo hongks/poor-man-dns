@@ -3,6 +3,7 @@ import os
 import platform
 import ssl
 import threading
+import time
 
 from http.server import HTTPServer
 
@@ -44,8 +45,13 @@ def main():
 
     logging.info("initialized!")
 
-    adapter = Adapter()
-    adapter.get_dns(config.dns.interface)
+    adapter = Adapter(config.adapter)
+    if adapter.supported_platform():
+        if config.adapter.connect:
+            adapter.connect()
+            time.sleep(9)
+
+        adapter.get_dns()
 
     if config.cache.enable:
         config.cache.cache = cachetools.TTLCache(
@@ -54,7 +60,7 @@ def main():
 
     logging.info(
         f"cache-enable: {str(config.cache.enable).lower()}"
-        + f", max-size: {config.cache.max_size}, ttl: {config.cache.ttl}"
+        + f", max-size: {config.cache.max_size}, ttl: {config.cache.ttl}."
     )
 
     p = psutil.Process(os.getpid())
@@ -71,7 +77,7 @@ def main():
             DNSHandler, config.cache, config.dns, adsblock.blocked_domains
         )
         logging.info(
-            f"local dns server running on {config.dns.hostname}:{config.dns.port}"
+            f"local dns server running on {config.dns.hostname}:{config.dns.port}."
         )
         # server.serve_forever()
 
@@ -95,11 +101,14 @@ def main():
         httpd.target_mode = config.dns.target_mode
 
         context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        context.load_cert_chain(certfile="certs/cert.pem", keyfile="certs/key.pem")
+        context.load_cert_chain(
+            certfile=f"{config.filepath}/certs/cert.pem",
+            keyfile=f"{config.filepath}/certs/key.pem",
+        )
         httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
 
         logging.info(
-            f"local doh server running on {config.doh.hostname}:{config.doh.port}"
+            f"local doh server running on {config.doh.hostname}:{config.doh.port}."
         )
         httpd.serve_forever()
 

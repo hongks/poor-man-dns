@@ -25,8 +25,8 @@ class AdsBlock:
         ):
             return
 
-        logging.info("generate new cache, empty or older than a day...")
-        logging.info(f"+ loading {len(urls)} adblock lists ...")
+        logging.info("generate new cache, as cache is empty or older than a day!")
+        logging.info(f"parsing {len(urls)} adblock lists ...")
 
         with httpx.Client(verify=False, timeout=9.0) as client:
             buffers = []
@@ -54,7 +54,7 @@ class AdsBlock:
         self.blocked_domains = sorted(self.blocked_domains)
         self.sqlite.update("blocked-domains", "\n".join(self.blocked_domains))
 
-        logging.info(f"+ done, loaded {stats}!")
+        logging.info(f"... done, loaded {stats}!")
 
     def load_cache(self):
         # blocked_stats
@@ -64,7 +64,7 @@ class AdsBlock:
         # blocked_domains
         row = self.session.query(Setting).filter_by(key="blocked-domains").first()
         if row:
-            self.blocked_domains = sorted(row.value.split("\n"))
+            self.blocked_domains = set(row.value.split("\n"))
 
         logging.info(f"loaded cached blocked domains, {stats}!")
 
@@ -78,7 +78,7 @@ class AdsBlock:
                 buffer = f"{domain}."
                 if buffer not in self.blocked_domains:
                     self.blocked_domains.add(buffer)
-                    logging.debug(f"blacklisting {buffer}")
+                    logging.debug(f"blacklisted {buffer}")
 
         logging.info(f"loaded custom blacklist, {count}!")
 
@@ -94,7 +94,7 @@ class AdsBlock:
                 if buffer in self.blocked_domains:
                     count += 1
                     self.blocked_domains.remove(buffer)
-                    logging.debug(f"whitelisting {buffer}")
+                    logging.debug(f"whitelisted {buffer}")
 
         logging.info(f"loaded whitelist, {count} out of {total}!")
 
@@ -116,9 +116,10 @@ class AdsBlock:
 
                 count += 1
                 self.blocked_domains.add(domain)
+                # logging.debug(f"parsed {domain} from {line}")
 
         self.total_domains += count
-        logging.debug(f"++ {count}, {url}")
+        logging.debug(f"+{count}, {url}")
 
         return [url, response.text, count]
 

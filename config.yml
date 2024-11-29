@@ -1,3 +1,8 @@
+adapter:
+  connect: true
+  interface: "wi-fi"
+  ssid: "default"
+
 cache:
   enable: true
   max_size: 1000
@@ -6,10 +11,8 @@ cache:
 dns:
   hostname: "127.0.0.1"
   port: 53
-
-  interface: "wi-fi"
-
   target_mode: dns-message
+
   target_doh:
     - "https://1.1.1.1/dns-query"
     - "https://9.9.9.9:5053/dns-query"

@@ -16,9 +16,15 @@ class Base:
 
 # default configs, overide as needed
 class Config(Base):
+    class Adapter(Base):
+        def __init__(self):
+            self.connect = False
+            self.interface = "wi-fi"
+            self.ssid = "default"
+
     class AdsBlock(Base):
         def __init__(self):
-            self.blacklist = (["https://v.firebog.net/hosts/easyprivacy.txt"],)
+            self.blacklist = ("https://v.firebog.net/hosts/easyprivacy.txt",)
             self.custom = ()
             self.reload = False
             self.whitelist = ()
@@ -35,8 +41,6 @@ class Config(Base):
         def __init__(self):
             self.hostname = "127.0.0.1"
             self.port = 53
-
-            self.interface = "wi-fi"
             self.target_doh = ["https://1.1.1.1/dns-query"]
             self.target_mode = "dns-message"
 
@@ -59,9 +63,11 @@ class Config(Base):
 
     def __init__(self):
         self.filename = "config.yml"
+        self.filepath = Path(__file__).parent.parent.parent.resolve()
         self.secret_key = "the-quick-brown-fox-jumps-over-the-lazy-dog!"
         self.sqlite_uri = "sqlite:///cache.sqlite"
 
+        self.adapter = self.Adapter()
         self.adsblock = self.AdsBlock()
         self.cache = self.Cache()
         self.dns = self.DNS()
@@ -85,6 +91,10 @@ class Config(Base):
         with open(self.filename, "r") as f:
             configs = yaml.load(f, Loader=yaml.loader.SafeLoader)
 
+            self.adapter.connect = configs["adapter"]["connect"]
+            self.adapter.interface = configs["adapter"]["interface"]
+            self.adapter.ssid = configs["adapter"]["ssid"]
+
             self.adsblock.blacklist = sorted(configs["adblock"]["blacklist"])
             self.adsblock.custom = set(configs["adblock"]["custom"])
             self.adsblock.reload = configs["adblock"]["reload"]
@@ -96,7 +106,6 @@ class Config(Base):
 
             self.dns.hostname = configs["dns"]["hostname"]
             self.dns.port = configs["dns"]["port"]
-            self.dns.interface = configs["dns"]["interface"]
             self.dns.target_doh = configs["dns"]["target_doh"]
             self.dns.target_mode = configs["dns"]["target_mode"]
 
