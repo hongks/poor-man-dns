@@ -29,7 +29,7 @@ class Adapter:
             return
 
         try:
-            result = subprocess.run(
+            subprocess.run(
                 ["netsh", "wlan", "connect", f"ssid={self.ssid}", f"name={self.ssid}"],
                 capture_output=True,
                 text=True,

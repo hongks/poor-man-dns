@@ -1,7 +1,8 @@
 import logging
 import random
 import time
-import socketserver
+
+from socketserver import BaseRequestHandler, ThreadingUDPServer
 
 import dns.message
 import dns.query
@@ -9,7 +10,7 @@ import dns.rdatatype
 import httpx
 
 
-class DNSHandler(socketserver.BaseRequestHandler):
+class DNSHandler(BaseRequestHandler):
     def send_response(self, socket, response):
         try:
             socket.sendto(response.to_wire(), self.client_address)
@@ -19,7 +20,7 @@ class DNSHandler(socketserver.BaseRequestHandler):
     def handle(self):
         logging.debug(f"{self.client_address} request data: {self.request}")
 
-        data = self.request[0].strip()
+        data = self.request[0]  # .strip()
         socket = self.request[1]
 
         # parse dns message ######################################################
@@ -38,7 +39,7 @@ class DNSHandler(socketserver.BaseRequestHandler):
             response.set_rcode(dns.rcode.FORMERR)
 
             logging.error(
-                f"{self.client_address} error invalid query:\n{e}"
+                f"{self.client_address} error invalid query: {e}"
                 + f"\n{self.request}\n{data.hex()}"
             )
             self.send_response(socket, response)
@@ -166,21 +167,17 @@ class DNSHandler(socketserver.BaseRequestHandler):
             self.send_response(socket, response)
 
 
-class DNSServer(socketserver.ThreadingUDPServer):
-    def __init__(
-        self,
-        RequestHandlerClass,
-        cache,
-        dns,
-        blocked_domains,
-    ):
+class DNSServer(ThreadingUDPServer):
+    def __init__(self, cache, dns, blocked_domains):
         self.cache_enable = cache.enable
         self.cache_wip = cache.wip
         self.cache = cache.cache
 
-        self.blocked_domains = blocked_domains
         self.dns_custom = dns.custom
         self.target_doh = dns.target_doh
         self.target_mode = dns.target_mode
 
-        super().__init__((dns.hostname, dns.port), RequestHandlerClass)
+        self.blocked_domains = blocked_domains
+
+        super().__init__((dns.hostname, dns.port), DNSHandler)
+        logging.info(f"local dns server running on {dns.hostname}:{dns.port}.")

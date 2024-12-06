@@ -1,15 +1,16 @@
 import base64
 import logging
 import random
+import ssl
 import time
+
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs
 
 import dns.message
 import dns.query
 import dns.rdatatype
 import httpx
-
-from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
 
 
 class DOHHandler(BaseHTTPRequestHandler):
@@ -169,7 +170,7 @@ class DOHHandler(BaseHTTPRequestHandler):
 
         except Exception as e:
             logging.error(
-                f"{self.client_address} error invalid query:\n{e}\n{dns_query}"
+                f"{self.client_address} error invalid query: {e}\n{dns_query}"
             )
             return
 
@@ -205,3 +206,27 @@ class DOHHandler(BaseHTTPRequestHandler):
             return
 
         self.do_something(dns_query, query_name, query_type)
+
+
+class DOHServer(ThreadingHTTPServer):
+    def __init__(self, cache, dns, doh, filepath, blocked_domains):
+        self.cache_enable = cache.enable
+        self.cache_wip = cache.wip
+        self.cache = cache.cache
+
+        self.dns_custom = dns.custom
+        self.target_doh = dns.target_doh
+        self.target_mode = dns.target_mode
+
+        self.blocked_domains = blocked_domains
+        self.filepath = filepath
+
+        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        context.load_cert_chain(
+            certfile=f"{self.filepath}/certs/cert.pem",
+            keyfile=f"{self.filepath}/certs/key.pem",
+        )
+
+        super().__init__((doh.hostname, doh.port), DOHHandler)
+        self.socket = context.wrap_socket(self.socket, server_side=True)
+        logging.info(f"local doh server running on {doh.hostname}:{doh.port}.")

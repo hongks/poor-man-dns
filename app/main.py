@@ -1,11 +1,7 @@
 import logging
 import os
-import platform
-import ssl
 import threading
 import time
-
-from http.server import HTTPServer
 
 import cachetools
 import psutil
@@ -13,8 +9,8 @@ import psutil
 from helpers.configs import Config
 from helpers.adapter import Adapter
 from helpers.adsblock import AdsBlock
-from helpers.dns import DNSHandler, DNSServer
-from helpers.doh import DOHHandler
+from helpers.dns import DNSServer
+from helpers.doh import DOHServer
 from helpers.sqlite import SQLite
 
 
@@ -45,14 +41,22 @@ def main():
 
     logging.info("initialized!")
 
+    # connect the wifi and nice the process
+    p = psutil.Process(os.getpid())
     adapter = Adapter(config.adapter)
+
     if adapter.supported_platform():
         if config.adapter.connect:
             adapter.connect()
-            time.sleep(9)
+            time.sleep(3)
 
         adapter.get_dns()
+        p.nice(psutil.HIGH_PRIORITY_CLASS)
 
+    else:
+        p.nice(5)
+
+    # set up the caching
     if config.cache.enable:
         config.cache.cache = cachetools.TTLCache(
             maxsize=config.cache.max_size, ttl=config.cache.ttl
@@ -63,60 +67,49 @@ def main():
         + f", max-size: {config.cache.max_size}, ttl: {config.cache.ttl}."
     )
 
-    p = psutil.Process(os.getpid())
-    if platform.system().lower() == "windows":
-        p.nice(psutil.HIGH_PRIORITY_CLASS)
-    else:
-        p.nice(5)
+    # set up the threading
+    event = threading.Event()
+    threads = []
 
     try:
         # load cache first!
         adsblock.load_cache()
 
-        server = DNSServer(
-            DNSHandler, config.cache, config.dns, adsblock.blocked_domains
+        dns_server = DNSServer(config.cache, config.dns, adsblock.blocked_domains)
+        doh_server = DOHServer(
+            config.cache,
+            config.dns,
+            config.doh,
+            config.filepath,
+            adsblock.blocked_domains,
         )
-        logging.info(
-            f"local dns server running on {config.dns.hostname}:{config.dns.port}."
-        )
-        # server.serve_forever()
 
-        threads = threading.Thread(target=server.serve_forever)
-        threads.daemon = True
-        threads.start()
+        for server in [dns_server, doh_server]:
+            thread = threading.Thread(target=server.serve_forever)
+            thread.daemon = True
+            thread.start()
+
+            threads.append(thread)
 
         # re-set up the list of domains to be blocked
         adsblock.load_blacklist(config.adsblock.blacklist)
         adsblock.load_custom(config.adsblock.custom)
         adsblock.load_whitelist(config.adsblock.whitelist)
-        server.blocked_domains = adsblock.blocked_domains
 
-        httpd = HTTPServer((config.doh.hostname, config.doh.port), DOHHandler)
-        httpd.blocked_domains = adsblock.blocked_domains
-        httpd.cache_enable = config.cache.enable
-        httpd.cache_wip = config.cache.wip
-        httpd.cache = config.cache.cache
-        httpd.dns_custom = config.dns.custom
-        httpd.target_doh = config.dns.target_doh
-        httpd.target_mode = config.dns.target_mode
+        for server in [dns_server, doh_server]:
+            server.blocked_domains = adsblock.blocked_domains
 
-        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        context.load_cert_chain(
-            certfile=f"{config.filepath}/certs/cert.pem",
-            keyfile=f"{config.filepath}/certs/key.pem",
-        )
-        httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
-
-        logging.info(
-            f"local doh server running on {config.doh.hostname}:{config.doh.port}."
-        )
-        httpd.serve_forever()
+        while True:
+            pass
 
     except KeyboardInterrupt:
-        pass
+        event.set()
+        for server in [dns_server, doh_server]:
+            server.shutdown()
+
+        logging.error("ctrl-c pressed!")
 
     # adapter.reset_dns(cfg.dns.interface_name)
-
     sqlite.session.close()
     logging.info("sayonara!")
 

@@ -17,11 +17,25 @@ class AdsBlock:
         self.session = sqlite.session
         self.sqlite = sqlite
 
+    def get_adsblock_file(self, client, url):
+        for i in range(2):
+            try:
+                response = client.get(url)
+                response.raise_for_status()
+                break
+
+            except Exception as err:
+                logging.error(f"unexpected {err=}, {type(err)=}, {url}")
+                time.sleep(3)
+
+        return self.parse(response)
+
     def load_blacklist(self, urls):
         row = self.session.query(Setting).filter_by(key="blocked-stats").first()
         if (
-            row
-            and datetime.utcnow().date() < (row.updated_on + timedelta(days=1)).date()
+            not self.reload
+            or not row
+            or datetime.utcnow().date() < (row.updated_on + timedelta(days=1)).date()
         ):
             return
 
@@ -32,17 +46,8 @@ class AdsBlock:
             buffers = []
 
             for url in urls:
-                for i in range(2):
-                    try:
-                        response = client.get(url)
-                        response.raise_for_status()
-
-                        buffers.append(self.parse(response))
-                        break
-
-                    except Exception as err:
-                        logging.error(f"unexpected {err=}, {type(err)=}, {url}")
-                        time.sleep(1)
+                buffer = self.get_adsblock_file(client, url)
+                buffers.append(buffer)
 
             self.sync(buffers)
 
