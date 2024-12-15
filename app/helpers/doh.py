@@ -17,6 +17,12 @@ class DOHHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def do_response(self, status_code, content_type, response_data):
+        self.send_response(status_code)
+        self.send_header("Content-Type", content_type)
+        self.end_headers()
+        self.wfile.write(response_data)
+
     def do_something(self, dns_query, query_name, query_type):
         cache_keyname = f"{query_name}:{query_type}"
         logging.debug(f"{self.client_address} received: {query_name} {query_type}")
@@ -34,11 +40,7 @@ class DOHHandler(BaseHTTPRequestHandler):
             response.answer.append(rrset)
 
             logging.info(f"{self.client_address} custom-hit: {cache_keyname}")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/dns-message")
-            self.end_headers()
-
-            self.wfile.write(response.to_wire())
+            self.do_response(200, "application/dns-message", response.to_wire())
             return
 
         # blocked domain #########################################################
@@ -49,22 +51,18 @@ class DOHHandler(BaseHTTPRequestHandler):
 
         # cache ##################################################################
         if self.server.cache_enable:
-            if cache_keyname in self.server.cache_wip:
-                time.sleep(3)
-            else:
-                self.server.cache_wip.add(cache_keyname)
-
             if cache_keyname in self.server.cache:
                 response = dns.message.make_response(dns_query)
                 response.answer = self.server.cache[cache_keyname]["response"]
 
                 logging.info(f"{self.client_address} cache-hit: {cache_keyname}")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/dns-message")
-                self.end_headers()
-
-                self.wfile.write(response.to_wire())
+                self.do_response(200, "application/dns-message", response.to_wire())
                 return
+
+            if cache_keyname in self.server.cache_wip:
+                time.sleep(3)
+            else:
+                self.server.cache_wip.add(cache_keyname)
 
         try:
             target_doh = random.choice(self.server.target_doh)
@@ -86,7 +84,9 @@ class DOHHandler(BaseHTTPRequestHandler):
                 doh_response.raise_for_status()
 
                 doh_response_json = doh_response.json()
-                response = dns.message.make_response(dns_query)
+                response = dns.message.make_response(
+                    dns.message.make_query(query_name, query_type)
+                )
 
                 for answer in doh_response_json.get("Answer", []):
                     rrset = dns.rrset.from_text(
@@ -113,7 +113,7 @@ class DOHHandler(BaseHTTPRequestHandler):
                     target_doh,
                     headers=headers,
                     content=dns_query.to_wire(),
-                    timeout=10.0,
+                    timeout=9.0,
                 )
                 doh_response.raise_for_status()
 
@@ -130,18 +130,15 @@ class DOHHandler(BaseHTTPRequestHandler):
                     "timestamp": time.time(),
                 }
 
-                if cache_keyname in self.server.cache_wip:
-                    self.server.cache_wip.remove(cache_keyname)
-
-            self.send_response(200)
-            self.send_header("Content-Type", "application/dns-message")
-            self.end_headers()
-
-            self.wfile.write(doh_response.content)
+            self.do_response(200, "application/dns-message", response.to_wire())
 
         except Exception as e:
             logging.error(f"{self.client_address} error unhandled: {e}")
             self.send_error(500, "internal server error")
+
+        finally:
+            if self.server.cache_enable:
+                self.server.cache_wip.discard(cache_keyname)
 
     # curl -kvH "accept: application/dns-message"
     #   "https://127.0.0.1:5053/dns-query?dns=q80BAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
@@ -179,12 +176,7 @@ class DOHHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         logging.debug(f"{self.client_address} request data: {self.request}")
 
-        data = None
-        if self.headers.get("Content-Type") == "application/dns-message":
-            content_length = int(self.headers.get("Content-Length", 0))
-            data = self.rfile.read(content_length)
-
-        else:
+        if self.headers.get("Content-Type") != "application/dns-message":
             logging.error(
                 f"{self.client_address} error unsupported query:\n{self.request}"
             )
@@ -193,19 +185,24 @@ class DOHHandler(BaseHTTPRequestHandler):
             return
 
         try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            data = self.rfile.read(content_length)
+
             dns_query = dns.message.from_wire(data)
             query_name = str(dns_query.question[0].name)
 
             dns_type = dns_query.question[0].rdtype
             query_type = dns.rdatatype.to_text(dns_type)
 
+            self.do_something(dns_query, query_name, query_type)
+
         except Exception as e:
             logging.error(
                 f"{self.client_address} error invalid query:\n{e}\n{self.request}"
             )
-            return
 
-        self.do_something(dns_query, query_name, query_type)
+            self.send_error(400, "bad request: unsupported query")
+            return
 
 
 class DOHServer(ThreadingHTTPServer):

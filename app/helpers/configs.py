@@ -1,6 +1,6 @@
 import hashlib
 import socket
-
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -63,7 +63,7 @@ class Config(Base):
 
     def __init__(self):
         self.filename = "config.yml"
-        self.filepath = Path(__file__).parent.parent.parent.resolve()
+        self.filepath = Path(".").resolve()
         self.secret_key = "the-quick-brown-fox-jumps-over-the-lazy-dog!"
         self.sqlite_uri = "sqlite:///cache.sqlite"
 
@@ -76,68 +76,81 @@ class Config(Base):
 
     # override default configs
     def load(self):
-        if not Path(self.filename).exists():
+        file = Path(self.filename)
+
+        if not file.exists():
+            logging.warning(f"config file {self.filename} not found, using defaults.")
             return None
 
         sha256 = hashlib.sha256()
-        with open(self.filename, "rb") as f:
-            while True:
-                chunk = f.read(1000000)  # 1MB
-                if not chunk:
-                    break
-
+        with file.open("rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
                 sha256.update(chunk)
 
-        with open(self.filename, "r") as f:
-            configs = yaml.load(f, Loader=yaml.loader.SafeLoader)
+        try:
+            with file.open("r") as f:
+                configs = yaml.load(f, Loader=yaml.loader.SafeLoader)
 
-            self.adapter.connect = configs["adapter"]["connect"]
-            self.adapter.interface = configs["adapter"]["interface"]
-            self.adapter.ssid = configs["adapter"]["ssid"]
+                self.adapter.connect = configs["adapter"]["connect"]
+                self.adapter.interface = configs["adapter"]["interface"]
+                self.adapter.ssid = configs["adapter"]["ssid"]
 
-            self.adsblock.blacklist = sorted(configs["adblock"]["blacklist"])
-            self.adsblock.custom = set(configs["adblock"]["custom"])
-            self.adsblock.reload = configs["adblock"]["reload"]
-            self.adsblock.whitelist = set(configs["adblock"]["whitelist"])
+                self.adsblock.blacklist = sorted(configs["adblock"]["blacklist"])
+                self.adsblock.custom = set(configs["adblock"]["custom"])
+                self.adsblock.reload = configs["adblock"]["reload"]
+                self.adsblock.whitelist = set(configs["adblock"]["whitelist"])
 
-            self.cache.enable = configs["cache"]["enable"]
-            self.cache.max_size = configs["cache"]["max_size"]
-            self.cache.ttl = configs["cache"]["ttl"]
+                self.cache.enable = configs["cache"]["enable"]
+                self.cache.max_size = configs["cache"]["max_size"]
+                self.cache.ttl = configs["cache"]["ttl"]
 
-            self.dns.hostname = configs["dns"]["hostname"]
-            self.dns.port = configs["dns"]["port"]
-            self.dns.target_doh = configs["dns"]["target_doh"]
-            self.dns.target_mode = configs["dns"]["target_mode"]
+                self.dns.hostname = configs["dns"]["hostname"]
+                self.dns.port = configs["dns"]["port"]
+                self.dns.target_doh = configs["dns"]["target_doh"]
+                self.dns.target_mode = configs["dns"]["target_mode"]
 
-            buffers = {
-                "1.0.0.127.in-addr.arpa.": "127.0.0.1",
-                "localhost.": "127.0.0.1",
-                f"{socket.gethostname().lower()}.": "127.0.0.1",
-            }
-            for item in configs["dns"]["custom"]:
-                key, value = item.split(":")
-                buffers[f"{key.lower()}."] = value
+                buffers = {
+                    "1.0.0.127.in-addr.arpa.": "127.0.0.1",
+                    "localhost.": "127.0.0.1",
+                    f"{socket.gethostname().lower()}.": "127.0.0.1",
+                }
+                for item in configs["dns"]["custom"]:
+                    try:
+                        key, value = item.split(":")
+                        buffers[f"{key.lower()}."] = value
+                    except ValueError:
+                        logging.warning(f"invalid custom dns: {item}")
 
-            self.dns.custom = [{key: value} for key, value in sorted(buffers.items())]
+                self.dns.custom = [
+                    {key: value} for key, value in sorted(buffers.items())
+                ]
 
-            self.doh.hostname = configs["doh"]["hostname"]
-            self.doh.port = configs["doh"]["port"]
+                self.doh.hostname = configs["doh"]["hostname"]
+                self.doh.port = configs["doh"]["port"]
 
-            self.logging.level = configs["logging"]["level"].upper()
+                self.logging.level = configs["logging"]["level"].upper()
+
+        except Exception as e:
+            logging.error(f"unexpected {err=}, {type(err)=}")
+            return None
 
         return sha256.hexdigest()
 
     # in case config file is different
     def sync(self, session):
+        sha256 = self.load()
+        if not sha256:
+            return
+
         row = session.query(Setting).filter_by(key="config-sha256").first()
         dt = datetime.utcnow()
 
-        sha256 = self.load()
-        if row and sha256:
-            if sha256 != row.value:
-                row.value = sha256
-                row.updated_on = dt
+        if row and sha256 == row.value:
+            return  # no changes detected
 
+        if row:
+            row.value = sha256
+            row.updated_on = dt
         else:
             row = Setting(
                 key="config-sha256",

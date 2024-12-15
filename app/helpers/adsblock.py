@@ -22,24 +22,25 @@ class AdsBlock:
             try:
                 response = client.get(url)
                 response.raise_for_status()
-                break
+                return self.parse(response)
 
             except Exception as err:
                 logging.error(f"unexpected {err=}, {type(err)=}, {url}")
                 time.sleep(3)
 
-        return self.parse(response)
+        return None
 
     def load_blacklist(self, urls):
         row = self.session.query(Setting).filter_by(key="blocked-stats").first()
+
         if (
             not self.reload
-            or not row
-            or datetime.utcnow().date() < (row.updated_on + timedelta(days=1)).date()
+            and row
+            and datetime.utcnow().date() < (row.updated_on + timedelta(days=1)).date()
         ):
             return
 
-        logging.info("generate new cache, as cache is empty or older than a day!")
+        logging.info("generating new cache, as cache is empty or older than a day!")
         logging.info(f"parsing {len(urls)} adblock lists ...")
 
         with httpx.Client(verify=False, timeout=9.0) as client:
@@ -47,7 +48,9 @@ class AdsBlock:
 
             for url in urls:
                 buffer = self.get_adsblock_file(client, url)
-                buffers.append(buffer)
+
+                if buffer:
+                    buffers.append(buffer)
 
             self.sync(buffers)
 
@@ -75,17 +78,19 @@ class AdsBlock:
 
     def load_custom(self, lists):
         count = 0
+        total = 0
 
         for domain in lists:
             if domain:
-                count += 1
-
+                total += 1
                 buffer = f"{domain}."
+
                 if buffer not in self.blocked_domains:
                     self.blocked_domains.add(buffer)
+                    count += 1
                     logging.debug(f"blacklisted {buffer}")
 
-        logging.info(f"loaded custom blacklist, {count}!")
+        logging.info(f"loaded custom blacklist, {count} out of {total}!")
 
     def load_whitelist(self, lists):
         count = 0
@@ -97,8 +102,8 @@ class AdsBlock:
                 buffer = f"{domain}."
 
                 if buffer in self.blocked_domains:
-                    count += 1
                     self.blocked_domains.remove(buffer)
+                    count += 1
                     logging.debug(f"whitelisted {buffer}")
 
         logging.info(f"loaded whitelist, {count} out of {total}!")
@@ -111,22 +116,15 @@ class AdsBlock:
             line = line.strip()
 
             if line and not line.startswith(("!", "#")):
-                domain = line.split()
-                domain = (
-                    domain[1]
-                    if len(domain) > 1 and not domain[1].startswith("#")
-                    else domain[0]
-                )
-                domain = domain.replace("||", "").replace("^", "") + "."
-
-                count += 1
+                domain = line.split()[0].replace("||", "").replace("^", "") + "."
                 self.blocked_domains.add(domain)
+                count += 1
                 # logging.debug(f"parsed {domain} from {line}")
 
         self.total_domains += count
         logging.debug(f"+{count}, {url}")
 
-        return [url, response.text, count]
+        return url, response.text, count
 
     def sync(self, buffers):
         for url, contents, count in buffers:

@@ -72,11 +72,6 @@ class DNSHandler(BaseRequestHandler):
 
         # cache ##################################################################
         if self.server.cache_enable:
-            if cache_keyname in self.server.cache_wip:
-                time.sleep(3)
-            else:
-                self.server.cache_wip.add(cache_keyname)
-
             if cache_keyname in self.server.cache:
                 response = dns.message.make_response(dns_query)
                 response.answer = self.server.cache[cache_keyname]["response"]
@@ -85,6 +80,11 @@ class DNSHandler(BaseRequestHandler):
                 logging.info(f"{self.client_address} cache-hit: {cache_keyname}")
                 self.send_response(socket, response)
                 return
+
+            if cache_keyname in self.server.cache_wip:
+                time.sleep(3)
+            else:
+                self.server.cache_wip.add(cache_keyname)
 
         try:
             target_doh = random.choice(self.server.target_doh)
@@ -133,7 +133,7 @@ class DNSHandler(BaseRequestHandler):
                     target_doh,
                     headers=headers,
                     content=dns_query.to_wire(),
-                    timeout=10.0,
+                    timeout=9.0,
                 )
                 doh_response.raise_for_status()
 
@@ -161,8 +161,7 @@ class DNSHandler(BaseRequestHandler):
 
         finally:
             if self.server.cache_enable:
-                if cache_keyname in self.server.cache_wip:
-                    self.server.cache_wip.remove(cache_keyname)
+                self.server.cache_wip.discard(cache_keyname)
 
             self.send_response(socket, response)
 
