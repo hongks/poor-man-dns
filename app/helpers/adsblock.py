@@ -43,6 +43,7 @@ class AdsBlock:
         logging.info("generating new cache, as cache is empty or older than a day!")
         logging.info(f"parsing {len(urls)} adblock lists ...")
 
+        self.blocked_domains = set()
         with httpx.Client(verify=False, timeout=9.0) as client:
             buffers = []
 
