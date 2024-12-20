@@ -5,6 +5,8 @@ import time
 import logging
 from logging.handlers import TimedRotatingFileHandler
 
+from datetime import datetime, timedelta
+
 import cachetools
 import psutil
 
@@ -13,6 +15,7 @@ from helpers.adapter import Adapter
 from helpers.adsblock import AdsBlock
 from helpers.dns import DNSServer
 from helpers.doh import DOHServer
+# from helpers.flask import FlaskServer
 from helpers.sqlite import SQLite
 
 
@@ -88,39 +91,49 @@ def main():
     setup_adapter(config)
     setup_cache(config)
 
+    # load cache first!
+    adsblock.load_cache()
+
+    dns_server = DNSServer(config.cache, config.dns, adsblock.blocked_domains)
+    doh_server = DOHServer(
+        config.cache,
+        config.dns,
+        config.doh,
+        config.filepath,
+        adsblock.blocked_domains,
+    )
+    # flask_server = FlaskServer(config)
+
     # set up the threading
     event = threading.Event()
     threads = []
 
     try:
-        # load cache first!
-        adsblock.load_cache()
-
-        dns_server = DNSServer(config.cache, config.dns, adsblock.blocked_domains)
-        doh_server = DOHServer(
-            config.cache,
-            config.dns,
-            config.doh,
-            config.filepath,
-            adsblock.blocked_domains,
-        )
-
-        for server in [dns_server, doh_server]:
+        for server in [dns_server, doh_server]:  # [dns_server, doh_server, flask_server]:
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
-
             threads.append(thread)
 
-        # re-set up the list of domains to be blocked
-        adsblock.load_blacklist(config.adsblock.blacklist)
-        adsblock.load_custom(config.adsblock.custom)
-        adsblock.load_whitelist(config.adsblock.whitelist)
-
-        for server in [dns_server, doh_server]:
-            server.blocked_domains = adsblock.blocked_domains
-
         while not event.is_set():
-            time.sleep(1)
+            dt = datetime.now()
+
+            config.sync(sqlite.session)
+            adsblock = AdsBlock(sqlite, config.adsblock.reload)
+
+            # re-set up the list of domains to be blocked on change detected
+            if adsblock.load_blacklist(config.adsblock.blacklist):
+                adsblock.load_custom(config.adsblock.custom)
+                adsblock.load_whitelist(config.adsblock.whitelist)
+
+                for server in [dns_server, doh_server]:
+                    server.blocked_domains = adsblock.blocked_domains
+
+            # cron style scheduling
+            next = dt + timedelta(minutes=10)
+            sleep = (next - datetime.now()).total_seconds()
+
+            if sleep > 0:
+                time.sleep(sleep)
 
     except KeyboardInterrupt:
         logging.warning("ctrl-c pressed!")

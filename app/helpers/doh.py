@@ -51,6 +51,9 @@ class DOHHandler(BaseHTTPRequestHandler):
 
         # cache ##################################################################
         if self.server.cache_enable:
+            if cache_keyname in self.server.cache_wip:
+                time.sleep(3)
+
             if cache_keyname in self.server.cache:
                 response = dns.message.make_response(dns_query)
                 response.answer = self.server.cache[cache_keyname]["response"]
@@ -59,8 +62,6 @@ class DOHHandler(BaseHTTPRequestHandler):
                 self.do_response(200, "application/dns-message", response.to_wire())
                 return
 
-            if cache_keyname in self.server.cache_wip:
-                time.sleep(3)
             else:
                 self.server.cache_wip.add(cache_keyname)
 

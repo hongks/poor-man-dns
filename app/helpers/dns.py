@@ -72,6 +72,9 @@ class DNSHandler(BaseRequestHandler):
 
         # cache ##################################################################
         if self.server.cache_enable:
+            if cache_keyname in self.server.cache_wip:
+                time.sleep(3)
+
             if cache_keyname in self.server.cache:
                 response = dns.message.make_response(dns_query)
                 response.answer = self.server.cache[cache_keyname]["response"]
@@ -81,8 +84,6 @@ class DNSHandler(BaseRequestHandler):
                 self.send_response(socket, response)
                 return
 
-            if cache_keyname in self.server.cache_wip:
-                time.sleep(3)
             else:
                 self.server.cache_wip.add(cache_keyname)
 

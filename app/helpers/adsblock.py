@@ -38,9 +38,11 @@ class AdsBlock:
             and row
             and datetime.utcnow().date() < (row.updated_on + timedelta(days=1)).date()
         ):
-            return
+            return False
 
-        logging.info("generating new cache, as cache is empty or older than a day!")
+        logging.info(
+            "generating new cache, or cache is empty, or cache is older than a day!"
+        )
         logging.info(f"parsing {len(urls)} adblock lists ...")
 
         self.blocked_domains = set()
@@ -64,6 +66,7 @@ class AdsBlock:
         self.sqlite.update("blocked-domains", "\n".join(self.blocked_domains))
 
         logging.info(f"... done, loaded {stats}!")
+        return True
 
     def load_cache(self):
         # blocked_stats

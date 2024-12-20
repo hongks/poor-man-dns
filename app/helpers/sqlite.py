@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, Text, create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
 
 
 Base = declarative_base()
@@ -59,7 +59,7 @@ class SQLite:
         engine = create_engine(uri)
         Base.metadata.create_all(engine)
 
-        Session = sessionmaker(bind=engine)
+        Session = scoped_session(sessionmaker(bind=engine))
         self.session = Session()
 
     def update(self, key, value):
