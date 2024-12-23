@@ -71,8 +71,8 @@ class DOHHandler(BaseHTTPRequestHandler):
                 f"{self.client_address} forward: {cache_keyname}, {target_doh}"
             )
 
+            # dns-json ###########################################################
             if self.server.target_mode == "dns-json":
-                # dns-json #######################################################
                 headers = {
                     "accept": "application/dns-json",
                     "accept-encoding": "gzip",
@@ -102,8 +102,8 @@ class DOHHandler(BaseHTTPRequestHandler):
 
                     response.answer.append(rrset)
 
+            # dns-message ########################################################
             else:
-                # dns-message ####################################################
                 headers = {
                     "content-type": "application/dns-message",
                     "accept": "application/dns-message",

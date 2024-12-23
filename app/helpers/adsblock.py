@@ -47,14 +47,7 @@ class AdsBlock:
 
         self.blocked_domains = set()
         with httpx.Client(verify=False, timeout=9.0) as client:
-            buffers = []
-
-            for url in urls:
-                buffer = self.get_adsblock_file(client, url)
-
-                if buffer:
-                    buffers.append(buffer)
-
+            buffers = [self.get_adsblock_file(client, url) for url in urls]
             self.sync(buffers)
 
         # blocked_stats

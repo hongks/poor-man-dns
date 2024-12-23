@@ -1,6 +1,7 @@
 import hashlib
 import socket
 import logging
+
 from datetime import datetime
 from pathlib import Path
 
@@ -18,7 +19,7 @@ class Base:
 class Config(Base):
     class Adapter(Base):
         def __init__(self):
-            self.connect = False
+            self.enable = False
             self.interface = "wi-fi"
             self.ssid = "default"
 
@@ -34,7 +35,7 @@ class Config(Base):
             self.cache = None
             self.enable = True
             self.max_size = 1000
-            self.ttl = 180
+            self.ttl = 300
             self.wip = set()
 
     class DNS(Base):
@@ -61,11 +62,22 @@ class Config(Base):
             self.format = "%(asctime)s | %(levelname)s in %(module)s: %(message)s"
             self.level = "INFO"
 
+    class SQLite(Base):
+        def __init__(self):
+            self.echo = False
+            self.track_modifications = False
+            self.uri = "sqlite:///cache.sqlite"
+
+    class Web(Base):
+        def __init__(self):
+            self.enable = True
+            self.hostname = "127.0.0.1"
+            self.port = 5000
+
     def __init__(self):
         self.filename = "config.yml"
         self.filepath = Path(".").resolve()
         self.secret_key = "the-quick-brown-fox-jumps-over-the-lazy-dog!"
-        self.sqlite_uri = "sqlite:///cache.sqlite"
 
         self.adapter = self.Adapter()
         self.adsblock = self.AdsBlock()
@@ -73,6 +85,8 @@ class Config(Base):
         self.dns = self.DNS()
         self.doh = self.DOH()
         self.logging = self.Logging()
+        self.sqlite = self.SQLite()
+        self.web = self.Web()
 
     # override default configs
     def load(self):
@@ -91,7 +105,7 @@ class Config(Base):
             with file.open("r") as f:
                 configs = yaml.load(f, Loader=yaml.loader.SafeLoader)
 
-                self.adapter.connect = configs["adapter"]["connect"]
+                self.adapter.enable = configs["adapter"]["enable"]
                 self.adapter.interface = configs["adapter"]["interface"]
                 self.adapter.ssid = configs["adapter"]["ssid"]
 
@@ -130,7 +144,11 @@ class Config(Base):
 
                 self.logging.level = configs["logging"]["level"].upper()
 
-        except Exception as e:
+                self.web.enable = configs["web"]["enable"]
+                self.web.hostname = configs["web"]["hostname"]
+                self.web.port = configs["web"]["port"]
+
+        except Exception as err:
             logging.error(f"unexpected {err=}, {type(err)=}")
             return None
 
@@ -140,13 +158,13 @@ class Config(Base):
     def sync(self, session):
         sha256 = self.load()
         if not sha256:
-            return
+            return None
 
         row = session.query(Setting).filter_by(key="config-sha256").first()
         dt = datetime.utcnow()
 
         if row and sha256 == row.value:
-            return  # no changes detected
+            return None  # no changes detected
 
         if row:
             row.value = sha256
@@ -161,3 +179,6 @@ class Config(Base):
             session.add(row)
 
         session.commit()
+
+        logging.info(f"{self.filename} has changed, reloaded!")
+        return dt

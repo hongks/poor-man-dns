@@ -15,7 +15,7 @@ from helpers.adapter import Adapter
 from helpers.adsblock import AdsBlock
 from helpers.dns import DNSServer
 from helpers.doh import DOHServer
-# from helpers.flask import FlaskServer
+from helpers.web import WEBServer
 from helpers.sqlite import SQLite
 
 
@@ -29,7 +29,7 @@ def setup_adapter(config):
     p = psutil.Process(os.getpid())
 
     if adapter.supported_platform():
-        if config.adapter.connect:
+        if config.adapter.enable:
             adapter.connect()
             time.sleep(3)
 
@@ -80,7 +80,7 @@ def setup_logging(config):
 
 def main():
     config = Config()
-    sqlite = SQLite(config.sqlite_uri)
+    sqlite = SQLite(config.sqlite.uri)
 
     config.sync(sqlite.session)
     adsblock = AdsBlock(sqlite, config.adsblock.reload)
@@ -93,6 +93,8 @@ def main():
 
     # load cache first!
     adsblock.load_cache()
+    adsblock.load_custom(config.adsblock.custom)
+    adsblock.load_whitelist(config.adsblock.whitelist)
 
     dns_server = DNSServer(config.cache, config.dns, adsblock.blocked_domains)
     doh_server = DOHServer(
@@ -102,14 +104,14 @@ def main():
         config.filepath,
         adsblock.blocked_domains,
     )
-    # flask_server = FlaskServer(config)
+    web_server = WEBServer(config)
 
     # set up the threading
     event = threading.Event()
     threads = []
 
     try:
-        for server in [dns_server, doh_server]:  # [dns_server, doh_server, flask_server]:
+        for server in [dns_server, doh_server, web_server]:
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             threads.append(thread)
@@ -117,16 +119,20 @@ def main():
         while not event.is_set():
             dt = datetime.now()
 
-            config.sync(sqlite.session)
-            adsblock = AdsBlock(sqlite, config.adsblock.reload)
+            if config.sync(sqlite.session):
+                adsblock = AdsBlock(sqlite, config.adsblock.reload)
 
-            # re-set up the list of domains to be blocked on change detected
-            if adsblock.load_blacklist(config.adsblock.blacklist):
-                adsblock.load_custom(config.adsblock.custom)
-                adsblock.load_whitelist(config.adsblock.whitelist)
+                # re-set up the list of domains to be blocked on change detected
+                if adsblock.load_blacklist(config.adsblock.blacklist):
+                    adsblock.load_custom(config.adsblock.custom)
+                    adsblock.load_whitelist(config.adsblock.whitelist)
 
-                for server in [dns_server, doh_server]:
-                    server.blocked_domains = adsblock.blocked_domains
+                    for server in [dns_server, doh_server]:
+                        server.blocked_domains = adsblock.blocked_domains
+
+                    # re-set reload to false to prevent repeatative reload
+                    if config.adsblock.reload:
+                        adsblock = AdsBlock(sqlite, False)
 
             # cron style scheduling
             next = dt + timedelta(minutes=10)
