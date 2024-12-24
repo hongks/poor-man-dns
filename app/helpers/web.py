@@ -1,7 +1,7 @@
+import hashlib
 import logging
-import os
-import threading
 
+from datetime import datetime
 from pathlib import Path
 
 import flask.cli
@@ -12,7 +12,21 @@ from flask.logging import default_handler
 from .configs import Config
 from .dns import DNSServer
 from .doh import DOHServer
-from .sqlite import SQLite, Setting
+from .sqlite import AdsBlockList, SQLite, Setting
+
+
+# todo:
+# [x] 1. to get the secret key and sqlite database from config class.
+# [x] 2. to set the create config for debug environment in the config class, hidden.
+#
+# features:
+# [ ] 1. show the dns and doh services running, with slide option to stop and start back
+# [ ] 2. show the status for running services
+# [x] 3. show the loaded config.xml
+# [x] 4. show the loaded adsblock list and domains
+# [x] 5. the config changes should be at the file. cache.sqlite is again just a cache!
+# [ ] 6. able to view the cache.sqlite content for troubleshooting
+#
 
 
 config = Config()
@@ -43,8 +57,9 @@ def home():
     file = Path(config.logging.filename)
 
     buffer = []
-    with file.open("r") as f:
-        buffer = [line.strip() for line in f.readlines() if "running" in line]
+    if file.exists():
+        with file.open("r") as f:
+            buffer = [line.strip() for line in f.readlines() if "running" in line]
 
     data = []
     for service in ["adapter", "cache", "dns", "doh", "web"]:
@@ -56,25 +71,75 @@ def home():
 
 @app.route("/config")
 def config():
-    # todo: get the file content
     config = Config()
+    sqlite = SQLite(config.sqlite.uri)
+
+    # config.xml
+    config_file = {
+        "lastmodified": None,
+        "sha256": None,
+        "data": None,
+        "mismatched": False,
+    }
+
     file = Path(config.filename)
+    config_file["lastmodified"] = datetime.fromtimestamp(file.stat().st_mtime)
+
     with file.open("r") as f:
-        data = f.readlines()
+        config_file["data"] = "".join(f.readlines())
 
-    sqlite = SQLite(config.sqlite_uri)
+    sha256 = hashlib.sha256()
+    with file.open("rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            sha256.update(chunk)
+
+    config_file["sha256"] = sha256.hexdigest()
+
     row = sqlite.session.query(Setting).filter_by(key="config-sha256").first()
-    cache = {row.key: row.value}
+    if row.value != config_file["sha256"]:
+        config_file["mismatched"] = True
 
-    row = sqlite.session.query(Setting).filter_by(key="blocked-domains").first()
-    block = row.value
+    # adsblock list
+    rows = (
+        sqlite.session.query(AdsBlockList)
+        .order_by(AdsBlockList.updated_on.desc())
+        .all()
+    )
+    adsblock_list = [
+        {"url": row.url, "counts": row.count, "updated_on": row.updated_on}
+        for row in rows
+    ]
 
-    return render_template("config.html", cache=cache, data="".join(data), block=block)
+    return render_template("config.html", config=config_file, adsblock=adsblock_list)
 
 
 @app.route("/help")
 def help():
     return render_template("help.html")
+
+
+@app.route("/license")
+def license():
+    return render_template("license.html")
+
+
+@app.route("/query", defaults={"value": None})
+@app.route("/query/<string:value>")
+def query(value):
+    config = Config()
+    sqlite = SQLite(config.sqlite.uri)
+
+    rows = None
+    if value:
+        rows = (
+            sqlite.session.query(AdsBlockList)
+            .filter(AdsBlockList.contents.ilike(f"%{value}%"))
+            .order_by(AdsBlockList.updated_on.desc())
+            .all()
+        )
+        rows = [row.url for row in rows]
+
+    return jsonify({"results": rows})
 
 
 class WEBServer:

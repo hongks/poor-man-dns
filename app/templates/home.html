@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+
+{% block title %}home{% endblock %}
+
+{% block content %}
+
+<style>
+    table {
+        font-size: 0.9em;
+    }
+</style>
+
+<p class="fs-4">home</p>
+<hr />
+<p>this is the main page!</p>
+
+<div class="border px-2">
+    <table class="table">
+        <thead>
+            <tr>
+                <th scope="col">#</th>
+                <th scope="col">service name</th>
+                <th scope="col">started on</th>
+                <th scope="col">listening on</th>
+                <th scope="col">is enable?</th>
+            </tr>
+        </thead>
+        <tbody class="table-group-divider">
+            {% for d in data %}
+            <tr>
+                <th scope="row">{{ loop.index }}</th>
+                <td>{{ d.name }}</td>
+                <td>{{ d.started_on }}</td>
+                <td>{{ d.listening_on }}</td>
+                <td>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="flexSwitchCheckChecked"
+                            checked>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{{ buffer }}
+
+{% endblock %}

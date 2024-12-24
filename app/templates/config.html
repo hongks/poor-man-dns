@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block title %}config{% endblock %}
+
+{% block content %}
+
+<style>
+    table {
+        font-size: 0.9em;
+    }
+</style>
+
+<p class="fs-4">config</p>
+<hr />
+<p>current configuration loaded:</p>
+<br />
+
+<ul class="nav nav-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="config-tab" data-bs-toggle="tab" data-bs-target="#config-tab-pane"
+            type="button" role="tab" aria-controls="config-tab-pane" aria-selected="true">
+            config.xml
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="adsblock-tab" data-bs-toggle="tab" data-bs-target="#adsblock-tab-pane"
+            type="button" role="tab" aria-controls="adsblock-tab-pane" aria-selected="false">
+            adsblock list
+        </button>
+    </li>
+</ul>
+<div class="tab-content">
+    <div class="tab-pane fade show active" id="config-tab-pane" role="tabpanel" aria-labelledby="config-tab"
+        tabindex="0">
+        <div class="my-4">
+            <p>sha256: <em>{{ config.sha256 }}</em></p>
+            <p>
+                last modified on: <em>{{ config.lastmodified }}</em>
+                {% if config.mismatched %}
+                , this config.xml yet to load!
+                {% endif %}
+            </p>
+        </div>
+
+        <pre class="border font-monospace p-3"><code>{{ config.data }}</code></pre>
+    </div>
+
+    <div class="tab-pane fade" id="adsblock-tab-pane" role="tabpanel" aria-labelledby="adsblock-tab" tabindex="0">
+        <div class="my-4">
+            <div class="input-group mb-3">
+                <input id="search_text" type="text" class="form-control">
+                <button id="search_button" type="button" class="btn btn-outline-success">Search</button>
+            </div>
+            <div id="search_output"></div>
+
+            <p></p>
+            <p>historically, ads block lists loaded earlier:</p>
+        </div>
+
+        <div class="border px-2">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th scope="col">#</th>
+                        <th scope="col">url</th>
+                        <th scope="col">counts</th>
+                        <th scope="col">updated on</th>
+                    </tr>
+                </thead>
+                <tbody class="table-group-divider">
+                    {% for list in adsblock %}
+                    <tr>
+                        <th scope="row">{{ loop.index }}</th>
+                        <td>{{ list.url }}</td>
+                        <td>{{ list.counts }}</td>
+                        <td>{{ list.updated_on }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const button = document.getElementById("search_button");
+        const input = document.getElementById("search_text");
+        const output = document.getElementById("search_output");
+
+        button.addEventListener("click", async function () {
+            const query = input.value.trim();
+            if (!query) {
+                output.innerHTML = "";
+                return;
+            }
+
+            fetch("/query/" + query)
+                .then(response => response.json())
+                .then(json => {
+                    let html = "<ul>";
+
+                    if (json.results && json.results.length > 0) {
+                        json.results.forEach(url => {
+                            html += `<li><a href="${url}" target="_blank">${url}</a></li>`;
+                        });
+                    } else {
+                        html += "<li>No results found</li>";
+                    }
+                    html += "</ul><hr />";
+                    output.innerHTML = html;
+                })
+        });
+    });
+</script>
+
+{% endblock %}

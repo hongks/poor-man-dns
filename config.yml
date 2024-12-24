@@ -1,17 +1,36 @@
+# ################################################################################
+# will check the config.xml every 10 minutes.
+
+
+# ################################################################################
+# if enable, will connect the wifi ssid on start. use this cmd to get the ssid:
+# netsh wlan show profiles interface="wi-fi"
+#
+# not supported in linux.
+
 adapter:
-  connect: true
+  enable: false
   interface: "wi-fi"
   ssid: "default"
+
+
+# ################################################################################
+# cache
 
 cache:
   enable: true
   max_size: 1000
   ttl: 600
 
+
+# ################################################################################
+# in windows, not possible to set hostname to 0.0.0.0.
+# in linux, either authbind or docker should work.
+
 dns:
   hostname: "127.0.0.1"
-  port: 53
-  target_mode: dns-message
+  port: 5353
+  target_mode: "dns-message"  # or "dns-json"
 
   target_doh:
     - "https://1.1.1.1/dns-query"
@@ -20,23 +39,43 @@ dns:
   custom:
     - "localhost:127.0.0.1"
 
+
+# ################################################################################
+# use self sign cert. one option, use mkcert.
+
 doh:
   hostname: "0.0.0.0"
   port: 5053
 
+
+# ################################################################################
+# experimental wip web frontend
+
+web:
+  enable: false
+  hostname: "127.0.0.1"
+  port: 5050
+
+
+# ################################################################################
+# logging
+
 logging:
   level: "info"
 
+
+# ################################################################################
+# adsblock
+
 adblock:
-  reload: false
+  reload: false  # true to force reload on first run
   custom:
     - ""
 
   whitelist:
     - ""
 
-  blacklist:
-    # get it from https://firebog.net/
+  blacklist:  # get it from https://firebog.net/
 
     # suspicious lists
     - "https://raw.githubusercontent.com/PolishFiltersTeam/KADhosts/master/KADhosts.txt"

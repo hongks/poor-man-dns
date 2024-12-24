@@ -36,8 +36,9 @@ class AdsBlockLog(Base):
     __tablename__ = "adblock_logs"
     id = Column(Integer, primary_key=True)
 
-    domain = Column(Text)
-    type = Column(Text)
+    module = Column(Text)
+    key = Column(Text)
+    value = Column(Text)
 
     created_on = Column(DateTime, default=datetime.utcnow())
     updated_on = Column(DateTime, default=datetime.utcnow())
@@ -61,6 +62,20 @@ class SQLite:
 
         Session = scoped_session(sessionmaker(bind=engine))
         self.session = Session()
+
+    def log(self, module, key, value):
+        dt = datetime.utcnow()
+
+        row = AdsBlockLog(
+            module=module,
+            key=key,
+            value=value,
+            created_on=dt,
+            updated_on=dt,
+        )
+        self.session.add(row)
+
+        self.session.commit()
 
     def update(self, key, value):
         row = self.session.query(Setting).filter_by(key=key).first()
