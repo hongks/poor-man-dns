@@ -29,7 +29,7 @@ cache:
 
 dns:
   hostname: "127.0.0.1"
-  port: 5353
+  port: 53
   target_mode: "dns-message"  # or "dns-json"
 
   target_doh:
@@ -54,7 +54,7 @@ doh:
 web:
   enable: false
   hostname: "127.0.0.1"
-  port: 5050
+  port: 5000
 
 
 # ################################################################################
