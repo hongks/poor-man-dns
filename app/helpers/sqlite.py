@@ -58,24 +58,11 @@ class Setting(Base):
 class SQLite:
     def __init__(self, uri):
         engine = create_engine(uri)
-        Base.metadata.create_all(engine)
 
         Session = scoped_session(sessionmaker(bind=engine))
         self.session = Session()
 
-    def log(self, module, key, value):
-        dt = datetime.utcnow()
-
-        row = AdsBlockLog(
-            module=module,
-            key=key,
-            value=value,
-            created_on=dt,
-            updated_on=dt,
-        )
-        self.session.add(row)
-
-        self.session.commit()
+        Base.metadata.create_all(engine)
 
     def update(self, key, value):
         row = self.session.query(Setting).filter_by(key=key).first()

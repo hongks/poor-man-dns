@@ -1,6 +1,5 @@
 import hashlib
 import socket
-import logging
 
 from datetime import datetime
 from pathlib import Path
@@ -93,7 +92,7 @@ class Config(Base):
         file = Path(self.filename)
 
         if not file.exists():
-            logging.warning(f"config file {self.filename} not found, using defaults.")
+            print(f"config file {self.filename} not found, using defaults.")
             return None
 
         sha256 = hashlib.sha256()
@@ -133,7 +132,7 @@ class Config(Base):
                         key, value = item.split(":")
                         buffers[f"{key.lower()}."] = value
                     except ValueError:
-                        logging.warning(f"invalid custom dns: {item}")
+                        print(f"invalid custom dns: {item}")
 
                 self.dns.custom = [
                     {key: value} for key, value in sorted(buffers.items())
@@ -149,7 +148,7 @@ class Config(Base):
                 self.web.port = configs["web"]["port"]
 
         except Exception as err:
-            logging.error(f"unexpected {err=}, {type(err)=}")
+            print(f"unexpected {err=}, {type(err)=}")
             return None
 
         return sha256.hexdigest()
@@ -179,6 +178,4 @@ class Config(Base):
             session.add(row)
 
         session.commit()
-
-        logging.info(f"{self.filename} has changed, reloaded!")
         return dt

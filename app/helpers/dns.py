@@ -168,16 +168,22 @@ class DNSHandler(BaseRequestHandler):
 
 
 class DNSServer(ThreadingUDPServer):
-    def __init__(self, cache, dns, blocked_domains):
-        self.cache_enable = cache.enable
-        self.cache_wip = cache.wip
-        self.cache = cache.cache
+    def __init__(self, config, sqlite, blocked_domains):
+        self.cache_enable = config.cache.enable
+        self.cache_wip = config.cache.wip
+        self.cache = config.cache
 
-        self.dns_custom = dns.custom
-        self.target_doh = dns.target_doh
-        self.target_mode = dns.target_mode
+        self.dns_custom = config.dns.custom
+        self.target_doh = config.dns.target_doh
+        self.target_mode = config.dns.target_mode
 
         self.blocked_domains = blocked_domains
 
-        super().__init__((dns.hostname, dns.port), DNSHandler)
-        logging.info(f"local dns server running on {dns.hostname}:{dns.port}.")
+        self.session = sqlite.session
+        self.sqlite = sqlite
+
+        super().__init__((config.dns.hostname, config.dns.port), DNSHandler)
+
+        logging.info(
+            f"local dns server running on {config.dns.hostname}:{config.dns.port}."
+        )

@@ -1,32 +1,20 @@
 import hashlib
 import logging
 
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 
 import flask.cli
 
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, render_template
 from flask.logging import default_handler
+from sqlalchemy import or_
 
 from .configs import Config
 from .dns import DNSServer
 from .doh import DOHServer
-from .sqlite import AdsBlockList, SQLite, Setting
-
-
-# todo:
-# [x] 1. to get the secret key and sqlite database from config class.
-# [x] 2. to set the create config for debug environment in the config class, hidden.
-#
-# features:
-# [ ] 1. show the dns and doh services running, with slide option to stop and start back
-# [ ] 2. show the status for running services
-# [x] 3. show the loaded config.xml
-# [x] 4. show the loaded adsblock list and domains
-# [x] 5. the config changes should be at the file. cache.sqlite is again just a cache!
-# [ ] 6. able to view the cache.sqlite content for troubleshooting
-#
+from .sqlite import AdsBlockList, AdsBlockLog, Setting, SQLite
 
 
 config = Config()
@@ -42,31 +30,6 @@ app.config.from_mapping(
     SQLALCHEMY_DATABASE_URI=config.sqlite.uri,
     SQLALCHEMY_TRACK_MODIFICATIONS=config.sqlite.track_modifications,
 )
-
-# Global variables to hold server instances
-dns_server_instance = None
-doh_server_instance = None
-
-
-@app.route("/")
-@app.route("/home")
-def home():
-    config = Config()
-    config.load()
-
-    file = Path(config.logging.filename)
-
-    buffer = []
-    if file.exists():
-        with file.open("r") as f:
-            buffer = [line.strip() for line in f.readlines() if "running" in line]
-
-    data = []
-    for service in ["adapter", "cache", "dns", "doh", "web"]:
-        srv = {"name": service, "started_on": "", "listening_on": "", "is_enabled": ""}
-        data.append(srv)
-
-    return render_template("home.html", data=data, buffer=buffer)
 
 
 @app.route("/config")
@@ -118,6 +81,55 @@ def help():
     return render_template("help.html")
 
 
+@app.route("/")
+@app.route("/home")
+def home():
+    config = Config()
+    sqlite = SQLite(config.sqlite.uri)
+
+    # get the latest log
+    file = Path(config.logging.filename)
+
+    logs = []
+    if file.exists():
+        with file.open("r") as f:
+            logs = [line.strip() for line in f.readlines()]
+
+    # services
+    rows = (
+        sqlite.session.query(AdsBlockLog)
+        .filter(
+            or_(
+                AdsBlockLog.value.ilike("% running on %"),
+                AdsBlockLog.value.ilike("%cache-enable:%"),
+            )
+        )
+        .order_by(AdsBlockLog.updated_on.desc())
+        .all()
+    )
+
+    services = {}
+    for row in rows:
+        service = {
+            "name": row.module,
+            "started_on": row.updated_on,
+            "listening_on": None,
+        }
+
+        listening_on = row.value.lower()
+        if row.module == "main" and "cache-enable:" in listening_on:
+            service["name"] = "cache"
+            service["listening_on"] = listening_on
+        else:
+            service["listening_on"] = listening_on[listening_on.find(" on ") + 4 : -1]
+
+        if service["name"] not in services:
+            services[service["name"]] = service
+
+    services = OrderedDict(sorted(services.items()))
+    return render_template("home.html", services=services, logs="\n".join(logs))
+
+
 @app.route("/license")
 def license():
     return render_template("license.html")
@@ -142,11 +154,20 @@ def query(value):
     return jsonify({"results": rows})
 
 
+@app.route("/service", defaults={"name": None, "state": None})
+@app.route("/service/<string:name>/string:state")
+def service(name, state):
+    pass
+
+
 class WEBServer:
-    def __init__(self, config):
+    def __init__(self, config, sqlite):
         self.enable = config.web.enable
         self.hostname = config.web.hostname
         self.port = config.web.port
+
+        self.session = sqlite.session
+        self.sqlite = sqlite
 
         self.debug = True if config.logging.level == logging.debug else False
 
@@ -154,10 +175,13 @@ class WEBServer:
         if not self.enable:
             return
 
-        flask.cli.show_server_banner = lambda *args: None
         app.logger.removeHandler(default_handler)
+        flask.cli.show_server_banner = lambda *args: None
 
         logging.info(f"local web server running on {self.hostname}:{self.port}.")
         app.run(
             host=self.hostname, port=self.port, debug=self.debug, use_reloader=False
         )
+
+    def shutdown(self):
+        exit(0)

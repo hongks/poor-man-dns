@@ -207,17 +207,20 @@ class DOHHandler(BaseHTTPRequestHandler):
 
 
 class DOHServer(ThreadingHTTPServer):
-    def __init__(self, cache, dns, doh, filepath, blocked_domains):
-        self.cache_enable = cache.enable
-        self.cache_wip = cache.wip
-        self.cache = cache.cache
+    def __init__(self, config, sqlite, blocked_domains):
+        self.cache_enable = config.cache.enable
+        self.cache_wip = config.cache.wip
+        self.cache = config.cache
 
-        self.dns_custom = dns.custom
-        self.target_doh = dns.target_doh
-        self.target_mode = dns.target_mode
+        self.dns_custom = config.dns.custom
+        self.target_doh = config.dns.target_doh
+        self.target_mode = config.dns.target_mode
 
         self.blocked_domains = blocked_domains
-        self.filepath = filepath
+        self.filepath = config.filepath
+
+        self.session = sqlite.session
+        self.sqlite = sqlite
 
         context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         context.load_cert_chain(
@@ -225,6 +228,9 @@ class DOHServer(ThreadingHTTPServer):
             keyfile=f"{self.filepath}/certs/key.pem",
         )
 
-        super().__init__((doh.hostname, doh.port), DOHHandler)
+        super().__init__((config.doh.hostname, config.doh.port), DOHHandler)
         self.socket = context.wrap_socket(self.socket, server_side=True)
-        logging.info(f"local doh server running on {doh.hostname}:{doh.port}.")
+
+        logging.info(
+            f"local doh server running on {config.doh.hostname}:{config.doh.port}."
+        )
