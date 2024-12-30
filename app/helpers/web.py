@@ -14,7 +14,8 @@ from sqlalchemy import or_
 from .configs import Config
 from .dns import DNSServer
 from .doh import DOHServer
-from .sqlite import AdsBlockList, AdsBlockLog, Setting, SQLite
+from .models import AdsBlockList, AdsBlockLog, Setting
+from .sqlite import SQLite
 
 
 config = Config()
@@ -179,9 +180,7 @@ class WEBServer:
         flask.cli.show_server_banner = lambda *args: None
 
         logging.info(f"local web server running on {self.hostname}:{self.port}.")
-        app.run(
-            host=self.hostname, port=self.port, debug=self.debug, use_reloader=False
-        )
+        app.run(host=self.hostname, port=self.port, debug=False, use_reloader=False)
 
     def shutdown(self):
-        exit(0)
+        pass

@@ -171,7 +171,7 @@ class DNSServer(ThreadingUDPServer):
     def __init__(self, config, sqlite, blocked_domains):
         self.cache_enable = config.cache.enable
         self.cache_wip = config.cache.wip
-        self.cache = config.cache
+        self.cache = config.cache.cache
 
         self.dns_custom = config.dns.custom
         self.target_doh = config.dns.target_doh

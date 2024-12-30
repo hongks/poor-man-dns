@@ -1,68 +1,68 @@
+import threading
+
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, Text, create_engine
+from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
 
-
-Base = declarative_base()
-
-
-class AdsBlockList(Base):
-    __tablename__ = "adsblock_lists"
-    id = Column(Integer, primary_key=True)
-
-    url = Column(Text, unique=True)
-    is_active = Column(Boolean, index=True)
-    contents = Column(Text)
-    count = Column(Integer)
-
-    created_on = Column(DateTime, default=datetime.utcnow())
-    updated_on = Column(DateTime, default=datetime.utcnow())
-
-
-class AdsBlockDomain(Base):
-    __tablename__ = "adsblock_domains"
-    id = Column(Integer, primary_key=True)
-
-    domain = Column(Text, unique=True)
-    type = Column(Text, index=True)
-    count = Column(Integer)
-
-    created_on = Column(DateTime, default=datetime.utcnow())
-    updated_on = Column(DateTime, default=datetime.utcnow())
-
-
-class AdsBlockLog(Base):
-    __tablename__ = "adblock_logs"
-    id = Column(Integer, primary_key=True)
-
-    module = Column(Text)
-    key = Column(Text)
-    value = Column(Text)
-
-    created_on = Column(DateTime, default=datetime.utcnow())
-    updated_on = Column(DateTime, default=datetime.utcnow())
-
-
-class Setting(Base):
-    __tablename__ = "settings"
-    id = Column(Integer, primary_key=True)
-
-    key = Column(Text)
-    value = Column(Text)
-
-    created_on = Column(DateTime, default=datetime.utcnow())
-    updated_on = Column(DateTime, default=datetime.utcnow())
+from .models import Base, AdsBlockDomain, AdsBlockList, AdsBlockLog, Setting
 
 
 class SQLite:
     def __init__(self, uri):
         engine = create_engine(uri)
 
+        # apply sqlite concurrency tuning
+        with engine.connect() as conn:
+            conn.connection.execute(
+                "PRAGMA journal_mode=WAL;"
+            )  # enable Write-Ahead Logging
+            conn.connection.execute(
+                "PRAGMA synchronous=NORMAL;"
+            )  # reduce sync overhead
+            conn.connection.execute(
+                "PRAGMA cache_size=-16000;"
+            )  # set cache size (negative for KB)
+            conn.connection.execute(
+                "PRAGMA temp_store=MEMORY;"
+            )  # use memory for temporary tables
+            conn.connection.execute(
+                "PRAGMA locking_mode=NORMAL;"
+            )  # avoid exclusive locking
+
         Session = scoped_session(sessionmaker(bind=engine))
         self.session = Session()
 
         Base.metadata.create_all(engine)
+        self.running = True
+
+    def serve_forever(self):
+        session = self.Session()
+        log_buffer = []
+
+        while self.running:
+            try:
+                action, data = self.command_queue.get(timeout=1)
+                if action == 'write':
+                    table_name, log_data = data
+                    table = self._get_table(table_name)
+                    log_buffer.append((table, log_data))
+                    if len(log_buffer) >= self.batch_size:
+                        self._batch_write(session, log_buffer)
+                        log_buffer.clear()
+                elif action == 'read':
+                    table_name, query, params, callback = data
+                    result = session.execute(query, params).fetchall()
+                    callback(result)
+            except queue.Empty:
+                continue  # Timeout reached, continue processing
+
+        if log_buffer:
+            self._batch_write(session, log_buffer)
+        session.close()
+
+    def shutdown(self):
+        self.running = False
 
     def update(self, key, value):
         row = self.session.query(Setting).filter_by(key=key).first()

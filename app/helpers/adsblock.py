@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import httpx
 
-from .sqlite import AdsBlockList, Setting
+from .models import AdsBlockList, Setting
 
 
 class AdsBlock:

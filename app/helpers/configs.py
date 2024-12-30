@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from .sqlite import Setting
+from .models import Setting
 
 
 class Base:

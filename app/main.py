@@ -129,6 +129,7 @@ def main():
             threads.append(thread)
 
         setup_adsblock(config, adsblock, reload=True)
+        logging.info("press ctrl+c to quit!")
 
         while not event.is_set():
             dt = datetime.now()
@@ -154,12 +155,16 @@ def main():
         logging.warning("ctrl-c pressed!")
 
     finally:
+        event.set()
+
         for server in [dns_server, doh_server, web_server]:
             if server:
-                server.shutdown()
+                try:
+                    server.shutdown()
+                except Exception:
+                    pass
 
-        event.set()
-        for thread in threads:
+        for thread in threads[1:2]:
             thread.join()
 
         # adapter.reset_dns(cfg.dns.interface_name)

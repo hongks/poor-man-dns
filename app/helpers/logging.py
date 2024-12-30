@@ -2,7 +2,7 @@ import logging
 
 from datetime import datetime
 
-from helpers.sqlite import AdsBlockLog
+from .models import AdsBlockLog
 
 
 class SQLiteHandler(logging.Handler):
