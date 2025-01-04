@@ -1,7 +1,6 @@
 # ################################################################################
 # for-development-only
 # 
-# wheel
 # pip-review
 # pyinstaller
 # ruff
@@ -10,13 +9,18 @@
 # ################################################################################
 # prerequisite, required-to-work.
 
-aioquic
-cachetools
-cryptography
+aiohttp[speedups]
+aiohttp-jinja2
+jinja2
+
 dnspython
-flask
+aioquic
+cryptography
 httpx
 idna
+
+cachetools
 psutil
 pyyaml
 sqlalchemy
+wheel

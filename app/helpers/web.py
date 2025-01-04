@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 
@@ -5,39 +6,30 @@ from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 
-import flask.cli
+from aiohttp import web
+from aiohttp_jinja2 import setup as setup_jinja2, render_template
+import jinja2
 
-from flask import Flask, jsonify, render_template
-from flask.logging import default_handler
 from sqlalchemy import or_
 
 from .configs import Config
-from .dns import DNSServer
-from .doh import DOHServer
 from .models import AdsBlockList, AdsBlockLog, Setting
 from .sqlite import SQLite
 
 
+# load configurations
 config = Config()
+sqlite = SQLite(config.sqlite.uri)
 
-app = Flask(
-    __name__,
-    static_folder=f"{config.filepath}/app/static/",
-    template_folder=f"{config.filepath}/app/templates/",
-)
-app.config.from_mapping(
-    SECRET_KEY=config.secret_key,
-    SQLALCHEMY_ECHO=config.sqlite.echo,
-    SQLALCHEMY_DATABASE_URI=config.sqlite.uri,
-    SQLALCHEMY_TRACK_MODIFICATIONS=config.sqlite.track_modifications,
-)
+# initialize aiohttp app
+app = web.Application()
+setup_jinja2(app, loader=jinja2.FileSystemLoader(f"{config.filepath}/app/templates"))
+
+# static file handling
+app.router.add_static("/static/", path=f"{config.filepath}/app/static", name="static")
 
 
-@app.route("/config")
-def config():
-    config = Config()
-    sqlite = SQLite(config.sqlite.uri)
-
+async def config_handler(request):
     # config.xml
     config_file = {
         "lastmodified": None,
@@ -74,20 +66,16 @@ def config():
         for row in rows
     ]
 
-    return render_template("config.html", config=config_file, adsblock=adsblock_list)
+    return render_template(
+        "config.html", request, {"config": config_file, "adsblock": adsblock_list}
+    )
 
 
-@app.route("/help")
-def help():
-    return render_template("help.html")
+async def help_handler(request):
+    return render_template("help.html", request, {})
 
 
-@app.route("/")
-@app.route("/home")
-def home():
-    config = Config()
-    sqlite = SQLite(config.sqlite.uri)
-
+async def home_handler(request):
     # get the latest log
     file = Path(config.logging.filename)
 
@@ -128,21 +116,19 @@ def home():
             services[service["name"]] = service
 
     services = OrderedDict(sorted(services.items()))
-    return render_template("home.html", services=services, logs="\n".join(logs))
+    return render_template(
+        "home.html", request, {"services": services, "logs": "\n".join(logs)}
+    )
 
 
-@app.route("/license")
-def license():
-    return render_template("license.html")
+async def license_handler(request):
+    return render_template("license.html", request, {})
 
 
-@app.route("/query", defaults={"value": None})
-@app.route("/query/<string:value>")
-def query(value):
-    config = Config()
-    sqlite = SQLite(config.sqlite.uri)
-
+async def query_handler(request):
+    value = request.match_info.get("value")
     rows = None
+
     if value:
         rows = (
             sqlite.session.query(AdsBlockList)
@@ -152,13 +138,21 @@ def query(value):
         )
         rows = [row.url for row in rows]
 
-    return jsonify({"results": rows})
+    return web.json_response({"results": rows})
 
 
-@app.route("/service", defaults={"name": None, "state": None})
-@app.route("/service/<string:name>/string:state")
-def service(name, state):
-    pass
+async def service_handler(request):
+    return web.json_response({"message": "service handler not implemented!"})
+
+
+app.router.add_get("/config", config_handler)
+app.router.add_get("/help", help_handler)
+app.router.add_get("/", home_handler)
+app.router.add_get("/home", home_handler)
+app.router.add_get("/license", license_handler)
+app.router.add_get("/query", query_handler)
+app.router.add_get("/query/{value}", query_handler)
+app.router.add_get("/service", service_handler)
 
 
 class WEBServer:
@@ -171,16 +165,24 @@ class WEBServer:
         self.sqlite = sqlite
 
         self.debug = True if config.logging.level == logging.debug else False
+        self.running = True
 
-    def serve_forever(self):
+    def close(self):
+        self.running = False
+        logging.debug("local web server shutting down!")
+
+    async def listen(self):
         if not self.enable:
             return
 
-        app.logger.removeHandler(default_handler)
-        flask.cli.show_server_banner = lambda *args: None
+        runner = web.AppRunner(app)
+        await runner.setup()
 
+        site = web.TCPSite(runner, host=self.hostname, port=self.port)
+        await site.start()
+
+        logging.getLogger("aiohttp").setLevel(logging.WARNING)
         logging.info(f"local web server running on {self.hostname}:{self.port}.")
-        app.run(host=self.hostname, port=self.port, debug=False, use_reloader=False)
 
-    def shutdown(self):
-        pass
+        while self.running:
+            await asyncio.sleep(3600)

@@ -1,19 +1,21 @@
-import threading
+import asyncio
+import logging
+import time
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
+from sqlalchemy.orm import scoped_session, sessionmaker
 
 from .models import Base, AdsBlockDomain, AdsBlockList, AdsBlockLog, Setting
 
 
 class SQLite:
     def __init__(self, uri):
-        engine = create_engine(uri)
+        self.engine = create_engine(uri)
 
         # apply sqlite concurrency tuning
-        with engine.connect() as conn:
+        with self.engine.connect() as conn:
             conn.connection.execute(
                 "PRAGMA journal_mode=WAL;"
             )  # enable Write-Ahead Logging
@@ -30,55 +32,97 @@ class SQLite:
                 "PRAGMA locking_mode=NORMAL;"
             )  # avoid exclusive locking
 
-        Session = scoped_session(sessionmaker(bind=engine))
+        Session = scoped_session(sessionmaker(bind=self.engine))
         self.session = Session()
 
-        Base.metadata.create_all(engine)
+        Base.metadata.create_all(self.engine)
+
+        self.buffers = []
+        self.lock = asyncio.Lock()
         self.running = True
 
-    def serve_forever(self):
-        session = self.Session()
-        log_buffer = []
+    def insert(self, data):
+        self.buffers.append(data)
 
-        while self.running:
-            try:
-                action, data = self.command_queue.get(timeout=1)
-                if action == 'write':
-                    table_name, log_data = data
-                    table = self._get_table(table_name)
-                    log_buffer.append((table, log_data))
-                    if len(log_buffer) >= self.batch_size:
-                        self._batch_write(session, log_buffer)
-                        log_buffer.clear()
-                elif action == 'read':
-                    table_name, query, params, callback = data
-                    result = session.execute(query, params).fetchall()
-                    callback(result)
-            except queue.Empty:
-                continue  # Timeout reached, continue processing
+    def flush(self):
+        start = time.time()
+        buffers = self.buffers.copy()
 
-        if log_buffer:
-            self._batch_write(session, log_buffer)
-        session.close()
-
-    def shutdown(self):
-        self.running = False
-
-    def update(self, key, value):
-        row = self.session.query(Setting).filter_by(key=key).first()
-        dt = datetime.utcnow()
-
-        if row:
-            row.value = value
-            row.updated_on = dt
-
-        else:
-            row = Setting(
-                key=key,
-                value=value,
-                created_on=dt,
-                updated_on=dt,
-            )
-            self.session.add(row)
+        for buffer in buffers:
+            self.session.add(buffer)
+            self.buffers.remove(buffer)
 
         self.session.commit()
+        logging.debug(
+            f"flushing {len(buffers)} records in {time.time()- start:.3f} seconds."
+        )
+
+    def close(self):
+        self.running = False
+        self.flush()
+        self.engine.dispose()
+
+    async def listen(self):
+        logging.debug("listener is up and running.")
+
+        while self.running:
+            self.flush()
+            await asyncio.sleep(60)
+
+    def update(self, data):
+        dt = datetime.now(tz=timezone.utc)
+
+        if isinstance(data, Setting):
+            row = self.session.query(Setting).filter_by(key=data.key).first()
+            if row:
+                row.value = data.value
+                row.updated_on = dt
+
+            else:
+                row = Setting(
+                    key=data.key,
+                    value=data.value,
+                    created_on=dt,
+                    updated_on=dt,
+                )
+                self.insert(row)
+
+        elif isinstance(data, AdsBlockList):
+            row = self.session.query(AdsBlockList).filter_by(url=data.url).first()
+            if row:
+                row.contents = data.contents
+                row.count = data.count
+                row.updated_on = dt
+
+            else:
+                row = AdsBlockList(
+                    url=data.url,
+                    is_active=True,
+                    contents=data.contents,
+                    count=data.count,
+                    created_on=dt,
+                    updated_on=dt,
+                )
+                self.insert(row)
+
+        self.session.commit()
+
+
+class SQLiteHandler(logging.Handler):
+    def __init__(self, sqlite):
+        super().__init__()
+
+        self.sqlite = sqlite
+
+    def emit(self, message):
+        dt = datetime.fromtimestamp(message.created, timezone.utc)
+
+        row = AdsBlockLog(
+            module=message.module,
+            key=message.levelname.lower(),
+            value=message.getMessage(),
+            created_on=dt,
+            updated_on=dt,
+        )
+
+        self.sqlite.insert(row)

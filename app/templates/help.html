@@ -31,7 +31,7 @@ adapter:
 cache:
   enable: true
   max_size: 1000
-  ttl: 300
+  ttl: 600
 
 
 # ################################################################################
@@ -45,6 +45,7 @@ dns:
 
   target_doh:
     - "https://1.1.1.1/dns-query"
+    - "https://8.8.8.8/dns-query"
     - "https://9.9.9.9:5053/dns-query"
 
   custom:
@@ -63,7 +64,7 @@ doh:
 # experimental wip web frontend
 
 web:
-  enable: false
+  enable: true
   hostname: "127.0.0.1"
   port: 5000
 

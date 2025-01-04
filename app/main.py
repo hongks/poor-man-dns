@@ -1,8 +1,9 @@
+import asyncio
 import os
-import threading
+import logging
+import selectors
 import time
 
-import logging
 from logging.handlers import TimedRotatingFileHandler
 
 from datetime import datetime, timedelta
@@ -10,14 +11,47 @@ from datetime import datetime, timedelta
 import cachetools
 import psutil
 
-from helpers.configs import Config
+from helpers.configs import Config, ConfigServer
 from helpers.adapter import Adapter
 from helpers.adsblock import AdsBlock
 from helpers.dns import DNSServer
 from helpers.doh import DOHServer
-from helpers.logging import SQLiteHandler
 from helpers.web import WEBServer
-from helpers.sqlite import SQLite
+from helpers.sqlite import SQLite, SQLiteHandler
+
+
+# ################################################################################
+# service routines
+
+
+async def service(config, sqlite, adsblock):
+    await adsblock.setup()  # use cache first
+
+    dns_server = DNSServer(config, sqlite, adsblock.blocked_domains)
+    doh_server = DOHServer(config, sqlite, adsblock.blocked_domains)
+    web_server = WEBServer(config, sqlite)
+    config_server = ConfigServer(config, sqlite, [dns_server, doh_server])
+
+    servers = [sqlite, dns_server, doh_server, web_server, config_server]
+    tasks = []
+
+    for server in servers:
+        tasks.append(asyncio.create_task(server.listen()))
+
+    await asyncio.sleep(1)
+    await adsblock.setup(reload=True)
+
+    logging.info("press ctrl+c to quit!")
+
+    try:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    except Exception as err:
+        logging.error(f"unexpected {err=}, {type(err)=}")
+
+    finally:
+        for server in servers:
+            server.close()
 
 
 # ################################################################################
@@ -41,26 +75,6 @@ def setup_adapter(config):
         p.nice(5)
 
 
-def setup_adsblock(config, adsblock, reload=False, force=False):
-    if reload:
-        if force:
-            # re-set up the list of domains to be blocked on config change detected
-            adsblock.reload = True
-
-        if adsblock.load_blacklist(config.adsblock.blacklist):
-            adsblock.load_custom(config.adsblock.custom)
-            adsblock.load_whitelist(config.adsblock.whitelist)
-
-            # re-set reload to false to prevent repeatative reload
-            adsblock.reload = False
-
-    else:
-        # load cache first!
-        adsblock.load_cache()
-        adsblock.load_custom(config.adsblock.custom)
-        adsblock.load_whitelist(config.adsblock.whitelist)
-
-
 def setup_cache(config, sqlite):
     # set up the caching
     if config.cache.enable:
@@ -82,8 +96,9 @@ def setup_logging(config, sqlite):
     file_handler = TimedRotatingFileHandler(
         config.logging.filename, when="midnight", backupCount=3
     )
-    file_handler.setLevel(logging.DEBUG)
-    sqlite_handler = SQLiteHandler(config, sqlite)
+
+    # log to sqlite
+    sqlite_handler = SQLiteHandler(sqlite)
 
     logging.basicConfig(
         format=config.logging.format,
@@ -105,70 +120,26 @@ def main():
     sqlite = SQLite(config.sqlite.uri)
     config.sync(sqlite.session)
 
-    adsblock = AdsBlock(sqlite, config.adsblock.reload)
-
+    adsblock = AdsBlock(config, sqlite)
     setup_logging(config, sqlite)
+
+    # asyncio.set_event_loop(asyncio.SelectorEventLoop(selectors.SelectSelector()))
     logging.info("initialized!")
 
     setup_adapter(config)
     setup_cache(config, sqlite)
-    setup_adsblock(config, adsblock)
-
-    dns_server = DNSServer(config, sqlite, adsblock.blocked_domains)
-    doh_server = DOHServer(config, sqlite, adsblock.blocked_domains)
-    web_server = WEBServer(config, sqlite)
-
-    # set up the threading
-    event = threading.Event()
-    threads = []
 
     try:
-        for server in [dns_server, doh_server, web_server]:
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            threads.append(thread)
-
-        setup_adsblock(config, adsblock, reload=True)
-        logging.info("press ctrl+c to quit!")
-
-        while not event.is_set():
-            dt = datetime.now()
-
-            if config.sync(sqlite.session):
-                setup_adsblock(
-                    config, adsblock, reload=True, force=config.adsblock.reload
-                )
-
-                for server in [dns_server, doh_server]:
-                    server.blocked_domains = adsblock.blocked_domains
-
-                logging.info(f"{config.filename} has changed, reloaded!")
-
-            # cron style scheduling
-            next = dt + timedelta(minutes=10)
-            sleep = (next - datetime.now()).total_seconds()
-
-            if sleep > 0:
-                time.sleep(sleep)
+        asyncio.run(service(config, sqlite, adsblock), debug=False)
 
     except KeyboardInterrupt:
-        logging.warning("ctrl-c pressed!")
+        logging.info("ctrl-c pressed!")
+
+    except Exception as err:
+        logging.error(f"unexpected {err=}, {type(err)=}")
 
     finally:
-        event.set()
-
-        for server in [dns_server, doh_server, web_server]:
-            if server:
-                try:
-                    server.shutdown()
-                except Exception:
-                    pass
-
-        for thread in threads[1:2]:
-            thread.join()
-
         # adapter.reset_dns(cfg.dns.interface_name)
-        sqlite.session.close()
         logging.info("sayonara!")
 
 

@@ -1,11 +1,14 @@
+import asyncio
 import hashlib
+import logging
 import socket
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
 
+from .adsblock import AdsBlock
 from .models import Setting
 
 
@@ -34,7 +37,7 @@ class Config(Base):
             self.cache = None
             self.enable = True
             self.max_size = 1000
-            self.ttl = 300
+            self.ttl = 600
             self.wip = set()
 
     class DNS(Base):
@@ -45,7 +48,7 @@ class Config(Base):
             self.target_mode = "dns-message"
 
             self.custom = {
-                "1.0.0.127.in-addr.arpa.": "127.0.0.1",
+                "1.0.0.127.in-addr.arpa.": "localhost.",
                 "localhost.": "127.0.0.1",
                 f"{socket.gethostname().lower()}.": "127.0.0.1",
             }
@@ -108,10 +111,10 @@ class Config(Base):
                 self.adapter.interface = configs["adapter"]["interface"]
                 self.adapter.ssid = configs["adapter"]["ssid"]
 
-                self.adsblock.blacklist = sorted(configs["adblock"]["blacklist"])
-                self.adsblock.custom = set(configs["adblock"]["custom"])
-                self.adsblock.reload = configs["adblock"]["reload"]
-                self.adsblock.whitelist = set(configs["adblock"]["whitelist"])
+                self.adsblock.blacklist = sorted(configs["adsblock"]["blacklist"])
+                self.adsblock.custom = set(configs["adsblock"]["custom"])
+                self.adsblock.reload = configs["adsblock"]["reload"]
+                self.adsblock.whitelist = set(configs["adsblock"]["whitelist"])
 
                 self.cache.enable = configs["cache"]["enable"]
                 self.cache.max_size = configs["cache"]["max_size"]
@@ -123,10 +126,11 @@ class Config(Base):
                 self.dns.target_mode = configs["dns"]["target_mode"]
 
                 buffers = {
-                    "1.0.0.127.in-addr.arpa.": "127.0.0.1",
+                    "1.0.0.127.in-addr.arpa.": "localhost.",
                     "localhost.": "127.0.0.1",
                     f"{socket.gethostname().lower()}.": "127.0.0.1",
                 }
+
                 for item in configs["dns"]["custom"]:
                     try:
                         key, value = item.split(":")
@@ -134,9 +138,7 @@ class Config(Base):
                     except ValueError:
                         print(f"invalid custom dns: {item}")
 
-                self.dns.custom = [
-                    {key: value} for key, value in sorted(buffers.items())
-                ]
+                self.dns.custom = {key: value for key, value in sorted(buffers.items())}
 
                 self.doh.hostname = configs["doh"]["hostname"]
                 self.doh.port = configs["doh"]["port"]
@@ -160,7 +162,7 @@ class Config(Base):
             return None
 
         row = session.query(Setting).filter_by(key="config-sha256").first()
-        dt = datetime.utcnow()
+        dt = datetime.now(tz=timezone.utc)
 
         if row and sha256 == row.value:
             return None  # no changes detected
@@ -168,6 +170,7 @@ class Config(Base):
         if row:
             row.value = sha256
             row.updated_on = dt
+
         else:
             row = Setting(
                 key="config-sha256",
@@ -179,3 +182,39 @@ class Config(Base):
 
         session.commit()
         return dt
+
+
+class ConfigServer:
+    def __init__(self, config, sqlite, servers):
+        self.config = config
+        self.servers = servers
+        self.sqlite = sqlite
+
+        self.running = True
+
+    def close(self):
+        self.running = False
+
+    async def listen(self):
+        logging.debug("listener is up and running.")
+
+        while self.running:
+            dt = datetime.now()
+
+            if self.config.sync(self.sqlite.session):
+                AdsBlock(config, sqlite).setup(
+                    reload=True,
+                    force=self.config.adsblock.reload,
+                )
+
+                for server in self.servers:
+                    server.reload(self.config, self.adsblock.blocked_domains)
+
+                logging.info(f"{config.filename} has changed, reloaded!")
+
+            # cron style scheduling
+            next = dt + timedelta(minutes=10)
+            sleep = (next - datetime.now()).total_seconds()
+
+            if sleep > 0:
+                await asyncio.sleep(sleep)

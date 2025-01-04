@@ -1,7 +1,6 @@
 import logging
-import time
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -9,34 +8,25 @@ from .models import AdsBlockList, Setting
 
 
 class AdsBlock:
-    def __init__(self, sqlite, reload=False):
+    def __init__(self, config, sqlite):
         self.blocked_domains = set()
         self.total_domains = 0
 
-        self.reload = reload
+        self.blacklist = config.adsblock.blacklist
+        self.custom = config.adsblock.custom
+        self.whitelist = config.adsblock.whitelist
+        self.reload = config.adsblock.reload
         self.session = sqlite.session
         self.sqlite = sqlite
 
-    def get_adsblock_file(self, client, url):
-        for i in range(2):
-            try:
-                response = client.get(url)
-                response.raise_for_status()
-                return self.parse(response)
-
-            except Exception as err:
-                logging.error(f"unexpected {err=}, {type(err)=}, {url}")
-                time.sleep(3)
-
-        return None
-
-    def load_blacklist(self, urls):
+    async def load_blacklist(self, urls):
         row = self.session.query(Setting).filter_by(key="blocked-stats").first()
+        dt = datetime.now(tz=timezone.utc)
 
         if (
             not self.reload
             and row
-            and datetime.utcnow().date() < (row.updated_on + timedelta(days=1)).date()
+            and dt.date() < (row.updated_on + timedelta(days=1)).date()
         ):
             return False
 
@@ -46,10 +36,15 @@ class AdsBlock:
         logging.info(f"parsing {len(urls)} adblock lists ...")
 
         self.blocked_domains = set()
-        with httpx.Client(verify=False, timeout=9.0) as client:
+        async with httpx.AsyncClient(
+            verify=False, timeout=9.0, transport=httpx.AsyncHTTPTransport(retries=3)
+        ) as client:
             buffers = []
             for url in urls:
-                buffer = self.get_adsblock_file(client, url)
+                buffer = await client.get(url)
+                buffer.raise_for_status()
+
+                buffer = self.parse(buffer)
                 if buffer:
                     buffers.append(buffer)
 
@@ -57,11 +52,13 @@ class AdsBlock:
 
         # blocked_stats
         stats = f"{len(self.blocked_domains)} out of {self.total_domains}"
-        self.sqlite.update("blocked-stats", stats)
+        self.sqlite.update(Setting(key="blocked-stats", value=stats))
 
         # blocked_domains
         self.blocked_domains = sorted(self.blocked_domains)
-        self.sqlite.update("blocked-domains", "\n".join(self.blocked_domains))
+        self.sqlite.update(
+            Setting(key="blocked-domains", value="\n".join(self.blocked_domains))
+        )
 
         logging.info(f"... done, loaded {stats}!")
         return True
@@ -128,29 +125,32 @@ class AdsBlock:
 
         return url, response.text, count
 
+    async def setup(self, reload=False, force=False):
+        if reload:
+            if force:
+                # re-set up the list of domains to be blocked on config change detected
+                self.reload = True
+
+            if await self.load_blacklist(self.blacklist):
+                self.load_custom(self.custom)
+                self.load_whitelist(self.whitelist)
+
+                # re-set reload to false to prevent repeatative reload
+                self.reload = False
+
+        else:
+            # load cache first!
+            self.load_cache()
+            self.load_custom(self.custom)
+            self.load_whitelist(self.whitelist)
+
     def sync(self, buffers):
         if not buffers:
             return
 
         for url, contents, count in buffers:
-            row = self.session.query(AdsBlockList).filter_by(url=url).first()
-            dt = datetime.utcnow()
-
-            if row:
-                row.contents = contents
-                row.count = count
-                row.updated_on = dt
-
-            else:
-                row = AdsBlockList(
-                    url=url,
-                    is_active=True,
-                    contents=contents,
-                    count=count,
-                    created_on=dt,
-                    updated_on=dt,
+            self.sqlite.update(
+                AdsBlockList(
+                    url=url, contents=contents, count="\n".join(self.blocked_domains)
                 )
-
-                self.session.add(row)
-
-        self.session.commit()
+            )

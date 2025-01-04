@@ -62,6 +62,7 @@ class Adapter:
             ["netsh", "interface", "ipv4", "show", "config", self.interface],
             success_message=f"retrieved dns configuration for {self.interface.lower()}.",
         )
+
         if output:
             logging.info(f"current dns configuration:\n{output}")
 

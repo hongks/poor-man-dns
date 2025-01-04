@@ -7,9 +7,9 @@
     <meta name="description" content="poor-man-dns" />
 
     <title>poor-man-dns: {% block title %}{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}" async />
-    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.min.css') }}" async />
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="stylesheet" href="/static/bootstrap.min.css" async />
+    <link rel="stylesheet" href="/static/bootstrap-icons.min.css" async />
+    <link rel="icon" type="image/png" href="/static/favicon.ico">
 
     <style>
         nav button {
@@ -34,22 +34,22 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <a class="navbar-brand" href="#">
-                <img src="{{ url_for('static', filename='favicon.ico') }}" alt="logo" height="24">
+                <img src="/static/favicon.ico" alt="logo" height="24">
                 poor-man-dns
             </a>
             <div class="collapse navbar-collapse" id="navbarContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('home') }}">home</a>
+                        <a class="nav-link" href="/home">home</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('config') }}">config</a>
+                        <a class="nav-link" href="/config">config</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('license') }}">license</a>
+                        <a class="nav-link" href="/license">license</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('help') }}">help</a>
+                        <a class="nav-link" href="/help">help</a>
                     </li>
                 </ul>
             </div>
@@ -72,7 +72,7 @@
             </footer>
         </div>
     </div>
-    <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}" async></script>
+    <script src="/static/bootstrap.bundle.min.js" async></script>
 </body>
 
 </html>
