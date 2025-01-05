@@ -213,17 +213,21 @@ class DNSServer:
                     logging.info("attempting to restart local dns server ...")
                     await asyncio.sleep(1)
 
-                self.transport, protocol = await asyncio.wait_for(
-                    asyncio.get_running_loop().create_datagram_endpoint(
-                        lambda: DNSHandler(self),
-                        local_addr=(self.hostname, self.port),
-                    ),
-                    timeout=5,  # timeout in seconds
-                )
+                try:
+                    self.transport, protocol = await asyncio.wait_for(
+                        asyncio.get_running_loop().create_datagram_endpoint(
+                            lambda: DNSHandler(self),
+                            local_addr=(self.hostname, self.port),
+                        ),
+                        timeout=3,  # timeout in seconds
+                    )
+                except TimeoutError:
+                    self.restart = True
 
-                logging.info(
-                    f"local dns server running on {self.hostname}:{self.port}."
-                )
+                else:
+                    logging.info(
+                        f"local dns server running on {self.hostname}:{self.port}."
+                    )
 
             await asyncio.sleep(1)
 
