@@ -1,17 +1,14 @@
 import asyncio
 import os
 import logging
-import selectors
 import time
 
 from logging.handlers import TimedRotatingFileHandler
 
-from datetime import datetime, timedelta
-
 import cachetools
 import psutil
 
-from helpers.configs import Config, ConfigServer
+from helpers.configs import Config, ConfigSelectorPolicy, ConfigServer
 from helpers.adapter import Adapter
 from helpers.adsblock import AdsBlock
 from helpers.dns import DNSServer
@@ -25,6 +22,7 @@ from helpers.sqlite import SQLite, SQLiteHandler
 
 
 async def service(config, sqlite, adsblock):
+    await sqlite.purge()
     await adsblock.setup()  # use cache first
 
     dns_server = DNSServer(config, sqlite, adsblock.blocked_domains)
@@ -51,7 +49,8 @@ async def service(config, sqlite, adsblock):
 
     finally:
         for server in servers:
-            server.close()
+            if server:
+                server.close()
 
 
 # ################################################################################
@@ -110,6 +109,9 @@ def setup_logging(config, sqlite):
     for logger in ["httpx", "httpcore", "urllib3", "werkzeug", "watchdog"]:
         logging.getLogger(logger).setLevel(logging.WARNING)
 
+    # misc
+    # logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+
 
 # ################################################################################
 # main routine
@@ -117,13 +119,13 @@ def setup_logging(config, sqlite):
 
 def main():
     config = Config()
-    sqlite = SQLite(config.sqlite.uri)
+    sqlite = SQLite(config)
     config.sync(sqlite.session)
 
     adsblock = AdsBlock(config, sqlite)
     setup_logging(config, sqlite)
 
-    # asyncio.set_event_loop(asyncio.SelectorEventLoop(selectors.SelectSelector()))
+    asyncio.set_event_loop_policy(ConfigSelectorPolicy())
     logging.info("initialized!")
 
     setup_adapter(config)

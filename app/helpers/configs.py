@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import logging
+import selectors
 import socket
 
 from datetime import datetime, timedelta, timezone
@@ -9,7 +10,7 @@ from pathlib import Path
 import yaml
 
 from .adsblock import AdsBlock
-from .models import Setting
+from .sqlite import Setting
 
 
 class Base:
@@ -63,6 +64,7 @@ class Config(Base):
             self.filename = "poor-man-dns.log"
             self.format = "%(asctime)s | %(levelname)s in %(module)s: %(message)s"
             self.level = "INFO"
+            self.retention = 7
 
     class SQLite(Base):
         def __init__(self):
@@ -184,6 +186,12 @@ class Config(Base):
         return dt
 
 
+class ConfigSelectorPolicy(asyncio.DefaultEventLoopPolicy):
+    def new_event_loop(self):
+        selector = selectors.SelectSelector()
+        return asyncio.SelectorEventLoop(selector)
+
+
 class ConfigServer:
     def __init__(self, config, sqlite, servers):
         self.config = config
@@ -202,7 +210,7 @@ class ConfigServer:
             dt = datetime.now()
 
             if self.config.sync(self.sqlite.session):
-                AdsBlock(config, sqlite).setup(
+                AdsBlock(self.config, self.sqlite).setup(
                     reload=True,
                     force=self.config.adsblock.reload,
                 )
@@ -210,7 +218,7 @@ class ConfigServer:
                 for server in self.servers:
                     server.reload(self.config, self.adsblock.blocked_domains)
 
-                logging.info(f"{config.filename} has changed, reloaded!")
+                logging.info(f"{self.config.filename} has changed, reloaded!")
 
             # cron style scheduling
             next = dt + timedelta(minutes=10)

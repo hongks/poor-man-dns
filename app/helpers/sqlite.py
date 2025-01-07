@@ -2,17 +2,90 @@ import asyncio
 import logging
 import time
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy import create_engine, Boolean, Column, DateTime, Integer, Text
+from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
 
-from .models import Base, AdsBlockDomain, AdsBlockList, AdsBlockLog, Setting
+
+Base = declarative_base()
+
+
+class AdsBlockDomain(Base):
+    __tablename__ = "adsblock_domains"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    domain = Column(Text, index=True)
+    type = Column(Text, index=True)
+    count = Column(Integer)
+
+    created_on = Column(DateTime, default=datetime.now(tz=timezone.utc))
+    updated_on = Column(
+        DateTime,
+        default=datetime.now(tz=timezone.utc),
+        onupdate=datetime.now(tz=timezone.utc),
+    )
+
+
+class AdsBlockList(Base):
+    __tablename__ = "adsblock_lists"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    url = Column(Text, unique=True, index=True)
+    is_active = Column(Boolean, index=True)
+    contents = Column(Text)
+    count = Column(Integer)
+
+    created_on = Column(DateTime, default=datetime.now(tz=timezone.utc))
+    updated_on = Column(
+        DateTime,
+        default=datetime.now(tz=timezone.utc),
+        onupdate=datetime.now(tz=timezone.utc),
+    )
+
+
+class Log(Base):
+    __tablename__ = "logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    module = Column(Text, index=True)
+    key = Column(Text, index=True)
+    value = Column(Text)
+
+    created_on = Column(DateTime, default=datetime.now(tz=timezone.utc))
+    updated_on = Column(
+        DateTime,
+        default=datetime.now(tz=timezone.utc),
+        onupdate=datetime.now(tz=timezone.utc),
+    )
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    key = Column(Text, unique=True, index=True)
+    value = Column(Text)
+
+    created_on = Column(DateTime, default=datetime.now(tz=timezone.utc))
+    updated_on = Column(
+        DateTime,
+        default=datetime.now(tz=timezone.utc),
+        onupdate=datetime.now(tz=timezone.utc),
+    )
 
 
 class SQLite:
-    def __init__(self, uri):
-        self.engine = create_engine(uri)
+    def __init__(self, config):
+        self.retention = config.logging.retention
+        self.uri = config.sqlite.uri
+
+        self.inserts = []
+        self.updates = []
+        self.lock = asyncio.Lock()
+        self.running = True
+
+        self.engine = create_engine(self.uri, echo=False)
 
         # apply sqlite concurrency tuning
         with self.engine.connect() as conn:
@@ -37,40 +110,73 @@ class SQLite:
 
         Base.metadata.create_all(self.engine)
 
-        self.buffers = []
-        self.lock = asyncio.Lock()
-        self.running = True
-
-    def insert(self, data):
-        self.buffers.append(data)
-
-    def flush(self):
-        start = time.time()
-        buffers = self.buffers.copy()
-
-        for buffer in buffers:
-            self.session.add(buffer)
-            self.buffers.remove(buffer)
-
-        self.session.commit()
-        logging.debug(
-            f"flushing {len(buffers)} records in {time.time()- start:.3f} seconds."
-        )
-
     def close(self):
         self.running = False
         self.flush()
         self.engine.dispose()
+
+    def flush(self):
+        start = time.time()
+
+        # quick hack to optimize pure inserts
+        buffers = self.inserts.copy()
+        counts = len(buffers)
+
+        if counts > 0:
+            for buffer in buffers:
+                self.session.add(buffer)
+                self.inserts.pop(0)
+
+            self.session.commit()
+            logging.debug(
+                f"flushing {counts} inserts in {time.time()- start:.3f} seconds."
+            )
+
+        # updates ...
+        buffers = self.updates.copy()
+        counts = len(buffers)
+
+        if counts > 0:
+            for buffer in buffers:
+                self.parse(buffer)
+                self.session.commit()
+
+                self.updates.remove(buffer)
+
+            logging.debug(
+                f"flushing {counts} updates in {time.time()- start:.3f} seconds."
+            )
+
+    def insert(self, data):
+        self.inserts.append(data)
 
     async def listen(self):
         logging.debug("listener is up and running.")
 
         while self.running:
             self.flush()
-            await asyncio.sleep(60)
+            await asyncio.sleep(60)  # run every minute
+
+    async def purge(self):
+        dt = datetime.now(tz=timezone.utc) + timedelta(days=self.retention)
+        logging.debug(f"purge logs older than {dt} ...")
+
+        counts = 0
+        with self.session as s:
+            rows = s.query(Log).filter(Log.updated_on > dt).all()
+            if rows:
+                counts = len(counts)
+                await s.delete(rows)
+                await s.commit()
+
+        logging.debug(f"... done, {counts} purged!")
 
     def update(self, data):
+        self.updates.append(data)
+
+    def parse(self, data):
         dt = datetime.now(tz=timezone.utc)
+        row = None
 
         if isinstance(data, Setting):
             row = self.session.query(Setting).filter_by(key=data.key).first()
@@ -85,7 +191,27 @@ class SQLite:
                     created_on=dt,
                     updated_on=dt,
                 )
-                self.insert(row)
+                self.session.add(row)
+
+        elif isinstance(data, AdsBlockDomain):
+            row = (
+                self.session.query(AdsBlockDomain)
+                .filter_by(domain=data.domain, type=data.type)
+                .first()
+            )
+            if row:
+                row.count += 1
+                row.updated_on = dt
+
+            else:
+                row = AdsBlockDomain(
+                    domain=data.domain,
+                    type=data.type,
+                    count=1,
+                    created_on=dt,
+                    updated_on=dt,
+                )
+                self.session.add(row)
 
         elif isinstance(data, AdsBlockList):
             row = self.session.query(AdsBlockList).filter_by(url=data.url).first()
@@ -103,9 +229,7 @@ class SQLite:
                     created_on=dt,
                     updated_on=dt,
                 )
-                self.insert(row)
-
-        self.session.commit()
+                self.session.add(row)
 
 
 class SQLiteHandler(logging.Handler):
@@ -117,7 +241,7 @@ class SQLiteHandler(logging.Handler):
     def emit(self, message):
         dt = datetime.fromtimestamp(message.created, timezone.utc)
 
-        row = AdsBlockLog(
+        row = Log(
             module=message.module,
             key=message.levelname.lower(),
             value=message.getMessage(),

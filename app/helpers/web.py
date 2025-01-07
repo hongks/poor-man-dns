@@ -6,20 +6,19 @@ from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 
-from aiohttp import web
-from aiohttp_jinja2 import setup as setup_jinja2, render_template
 import jinja2
 
-from sqlalchemy import or_
+from aiohttp import web
+from aiohttp_jinja2 import setup as setup_jinja2, render_template
+from sqlalchemy import or_, func
 
 from .configs import Config
-from .models import AdsBlockList, AdsBlockLog, Setting
-from .sqlite import SQLite
+from .sqlite import SQLite, AdsBlockDomain, AdsBlockList, Log, Setting
 
 
 # load configurations
 config = Config()
-sqlite = SQLite(config.sqlite.uri)
+sqlite = SQLite(config)
 
 # initialize aiohttp app
 app = web.Application()
@@ -51,8 +50,8 @@ async def config_handler(request):
 
     config_file["sha256"] = sha256.hexdigest()
 
-    row = sqlite.session.query(Setting).filter_by(key="config-sha256").first()
-    if row.value != config_file["sha256"]:
+    rows = sqlite.session.query(Setting).filter_by(key="config-sha256").first()
+    if rows.value != config_file["sha256"]:
         config_file["mismatched"] = True
 
     # adsblock list
@@ -86,14 +85,14 @@ async def home_handler(request):
 
     # services
     rows = (
-        sqlite.session.query(AdsBlockLog)
+        sqlite.session.query(Log)
         .filter(
             or_(
-                AdsBlockLog.value.ilike("% running on %"),
-                AdsBlockLog.value.ilike("%cache-enable:%"),
+                Log.value.ilike("% running on %"),
+                Log.value.ilike("%cache-enable:%"),
             )
         )
-        .order_by(AdsBlockLog.updated_on.desc())
+        .order_by(Log.updated_on.desc())
         .all()
     )
 
@@ -145,6 +144,38 @@ async def service_handler(request):
     return web.json_response({"message": "service handler not implemented!"})
 
 
+async def stats_handler(request):
+    buffers = OrderedDict(
+        [
+            ("forward", None),
+            ("cache-hit", None),
+            ("blacklisted", None),
+            ("custom-hit", None),
+        ]
+    )
+
+    for key in buffers.keys():
+        buffers[key] = (
+            sqlite.session.query(AdsBlockDomain)
+            .filter_by(type=key)
+            .order_by(AdsBlockDomain.count.desc())
+            .limit(20)
+            .all()
+        )
+
+    buffers["daily"] = (
+        sqlite.session.query(
+            func.date(AdsBlockDomain.updated_on).label("domain"),
+            func.sum(AdsBlockDomain.count).label("count"),
+        )
+        .group_by(func.date(AdsBlockDomain.updated_on))
+        .order_by(AdsBlockDomain.updated_on)
+        .all()
+    )
+
+    return render_template("stats.html", request, {"buffers": buffers})
+
+
 app.router.add_get("/config", config_handler)
 app.router.add_get("/help", help_handler)
 app.router.add_get("/", home_handler)
@@ -153,6 +184,7 @@ app.router.add_get("/license", license_handler)
 app.router.add_get("/query", query_handler)
 app.router.add_get("/query/{value}", query_handler)
 app.router.add_get("/service", service_handler)
+app.router.add_get("/stats", stats_handler)
 
 
 class WEBServer:

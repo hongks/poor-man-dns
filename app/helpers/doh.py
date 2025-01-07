@@ -12,6 +12,8 @@ import httpx
 
 from aiohttp import web
 
+from .sqlite import AdsBlockDomain
+
 
 class DOHHandler:
     def __init__(self, server):
@@ -33,6 +35,9 @@ class DOHHandler:
             )
             response.answer.append(rrset)
 
+            self.server.sqlite.update(
+                AdsBlockDomain(domain=cache_keyname, type="custom-hit")
+            )
             logging.info(f"{remote_addr} custom-hit: {cache_keyname}")
             return web.Response(
                 status=200,
@@ -45,6 +50,9 @@ class DOHHandler:
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.NXDOMAIN)
 
+            self.server.sqlite.update(
+                AdsBlockDomain(domain=cache_keyname, type="blacklisted")
+            )
             logging.info(f"{remote_addr} blacklisted: {cache_keyname}")
             return web.Response(
                 status=200,
@@ -61,6 +69,9 @@ class DOHHandler:
                 response = dns.message.make_response(dns_query)
                 response.answer = self.server.cache[cache_keyname]["response"]
 
+                self.server.sqlite.update(
+                    AdsBlockDomain(domain=cache_keyname, type="cache-hit")
+                )
                 logging.info(f"{remote_addr} cache-hit: {cache_keyname}")
                 return web.Response(
                     status=200,
@@ -74,6 +85,9 @@ class DOHHandler:
         try:
             target_doh = random.choice(self.server.target_doh)
             logging.info(f"{remote_addr} forward: {cache_keyname}, {target_doh}")
+            self.server.sqlite.update(
+                AdsBlockDomain(domain=cache_keyname, type="forward")
+            )
 
             # dns-json ###########################################################
             if self.server.target_mode == "dns-json":

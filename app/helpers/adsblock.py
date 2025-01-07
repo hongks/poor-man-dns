@@ -1,10 +1,11 @@
+import asyncio
 import logging
 
 from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from .models import AdsBlockList, Setting
+from .sqlite import AdsBlockList, Setting
 
 
 class AdsBlock:
@@ -39,16 +40,16 @@ class AdsBlock:
         async with httpx.AsyncClient(
             verify=False, timeout=9.0, transport=httpx.AsyncHTTPTransport(retries=3)
         ) as client:
-            buffers = []
             for url in urls:
-                buffer = await client.get(url)
+                buffer = await client.get(url, follow_redirects=True)
                 buffer.raise_for_status()
 
-                buffer = self.parse(buffer)
-                if buffer:
-                    buffers.append(buffer)
-
-            self.sync(buffers)
+                url, contents, count = self.parse(buffer)
+                if url and contents and count:
+                    self.sqlite.update(
+                        AdsBlockList(url=url, contents=contents, count=count)
+                    )
+                    await asyncio.sleep(1)
 
         # blocked_stats
         stats = f"{len(self.blocked_domains)} out of {self.total_domains}"
@@ -123,7 +124,7 @@ class AdsBlock:
         self.total_domains += count
         logging.debug(f"+{count}, {url}")
 
-        return url, response.text, count
+        return [url, response.text, count]
 
     async def setup(self, reload=False, force=False):
         if reload:
@@ -143,14 +144,3 @@ class AdsBlock:
             self.load_cache()
             self.load_custom(self.custom)
             self.load_whitelist(self.whitelist)
-
-    def sync(self, buffers):
-        if not buffers:
-            return
-
-        for url, contents, count in buffers:
-            self.sqlite.update(
-                AdsBlockList(
-                    url=url, contents=contents, count="\n".join(self.blocked_domains)
-                )
-            )

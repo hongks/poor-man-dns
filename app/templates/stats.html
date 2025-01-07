@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block title %}stats{% endblock %}
+
+{% block content %}
+<style>
+   .card {
+      margin: 9px;
+   }
+   ul li {
+      font-size: 0.9em;
+   }
+</style>
+
+<p class="fs-4">stats</p>
+<hr />
+<p>&nbsp;</p>
+
+<div class="row">
+   {% for key, value in buffers.items() %}
+   <div class="card border-dark mb-3" style="max-width: 18rem;">
+      <div class="card-header">{{ key }}</div>
+      <div class="card-body">
+         <p class="card-text">
+         <ul>
+         {%if value %}
+            {% for v in value %}
+            <li class="text-nowrap">{{ v.count }} , {{ v.domain }}</li>
+            {% endfor %}
+         {% else %}
+            <li class="text-nowrap">no data available.</li>
+         {% endif %}
+         </ul>
+         </p>
+      </div>
+   </div>
+   {% endfor %}
+</div>
+{% endblock %}

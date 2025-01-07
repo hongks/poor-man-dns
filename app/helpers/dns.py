@@ -8,6 +8,8 @@ import dns.query
 import dns.rdatatype
 import httpx
 
+from .sqlite import AdsBlockDomain
+
 
 class DNSHandler(asyncio.DatagramProtocol):
     def __init__(self, server):
@@ -32,6 +34,9 @@ class DNSHandler(asyncio.DatagramProtocol):
         try:
             target_doh = random.choice(self.server.target_doh)
             logging.info(f"{addr} forward: {cache_keyname}, {target_doh}")
+            self.server.sqlite.update(
+                AdsBlockDomain(domain=cache_keyname, type="forward")
+            )
 
             # dns-json ###########################################################
             if self.server.target_mode == "dns-json":
@@ -136,6 +141,9 @@ class DNSHandler(asyncio.DatagramProtocol):
 
             logging.info(f"{addr} custom-hit: {cache_keyname}")
             self.transport.sendto(response.to_wire(), addr)
+            self.server.sqlite.update(
+                AdsBlockDomain(domain=cache_keyname, type="custom-hit")
+            )
             return
 
         # blocked domain #########################################################
@@ -145,6 +153,9 @@ class DNSHandler(asyncio.DatagramProtocol):
 
             logging.info(f"{addr} blacklisted: {cache_keyname}")
             self.transport.sendto(response.to_wire(), addr)
+            self.server.sqlite.update(
+                AdsBlockDomain(domain=cache_keyname, type="blacklisted")
+            )
             return
 
         # cache ##################################################################
@@ -158,6 +169,9 @@ class DNSHandler(asyncio.DatagramProtocol):
 
                 logging.info(f"{addr} cache-hit: {cache_keyname}")
                 self.transport.sendto(response.to_wire(), addr)
+                self.server.sqlite.update(
+                    AdsBlockDomain(domain=cache_keyname, type="cache-hit")
+                )
                 return
 
             else:
