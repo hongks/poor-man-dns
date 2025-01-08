@@ -1,8 +1,10 @@
 FROM python:3.11
 
+RUN mkdir /poor-main-dns/run
+
 WORKDIR /poor-main-dns
 
-COPY config.yml .
+COPY config.yml ./run
 
 COPY requirements.txt .
 
@@ -16,8 +18,10 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 
 EXPOSE 53
 
-EXPOSE 5000
+EXPOSE 5050
 
 EXPOSE 5053
 
-CMD [ "python",  "-u", "all/main.py" ]
+WORKDIR /poor-main-dns/run
+
+CMD [ "python",  "-u", "../app/main.py" ]

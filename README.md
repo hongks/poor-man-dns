@@ -49,7 +49,8 @@ just run it.
 4. run the poor-man-dns:
 
    ```
-   $ python -u app/main.py
+   $ cd run
+   $ python -u ../app/main.py
    ```
 
 &nbsp;

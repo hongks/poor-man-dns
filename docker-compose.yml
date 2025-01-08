@@ -1,0 +1,20 @@
+services:
+    poor-man-dns:
+        build: ./poor-man-dns
+        container_name: poor-man-dns
+        healthcheck:
+            interval: 90s
+            retries: 3
+            start_period: 30s
+            test: [ "CMD", "curl", "-fks", "http://localhost:5050/" ]
+            timeout: 30s
+        image: poor-man-dns:latest
+        restart: always
+        networks:
+            - projects
+        ports:
+            - "0.0.0.0:53:53"
+            - "0.0.0.0:5050:5050"
+            - "0.0.0.0:5053:5053"
+        volumes:
+            - "./run/:/poor-main-dns/run/"

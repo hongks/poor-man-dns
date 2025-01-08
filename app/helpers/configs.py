@@ -80,7 +80,7 @@ class Config(Base):
 
     def __init__(self):
         self.filename = "config.yml"
-        self.filepath = Path(".").resolve()
+        self.filepath = Path("..").resolve()
         self.secret_key = "the-quick-brown-fox-jumps-over-the-lazy-dog!"
 
         self.adapter = self.Adapter()
