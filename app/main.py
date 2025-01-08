@@ -65,7 +65,7 @@ def setup_adapter(config):
     if adapter.supported_platform():
         if config.adapter.enable:
             adapter.connect()
-            time.sleep(3)
+            asyncio.sleep(3)
 
         adapter.get_dns()
         p.nice(psutil.HIGH_PRIORITY_CLASS)

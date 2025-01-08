@@ -114,6 +114,7 @@ class SQLite:
         self.running = False
         self.flush()
         self.engine.dispose()
+        logging.debug("listener is shutting down!")
 
     def flush(self):
         start = time.time()

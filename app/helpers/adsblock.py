@@ -37,19 +37,29 @@ class AdsBlock:
         logging.info(f"parsing {len(urls)} adblock lists ...")
 
         self.blocked_domains = set()
-        async with httpx.AsyncClient(
-            verify=False, timeout=9.0, transport=httpx.AsyncHTTPTransport(retries=3)
-        ) as client:
+        async with httpx.AsyncClient(verify=False, timeout=9.0) as client:
             for url in urls:
-                buffer = await client.get(url, follow_redirects=True)
-                buffer.raise_for_status()
+                for i in range(1, 4):
+                    try:
+                        response = await client.get(url, follow_redirects=True)
+                        response.raise_for_status()
 
-                url, contents, count = self.parse(buffer)
-                if url and contents and count:
-                    self.sqlite.update(
-                        AdsBlockList(url=url, contents=contents, count=count)
-                    )
-                    await asyncio.sleep(1)
+                        url, contents, count = self.parse(response)
+                        if not (url and contents and count):
+                            raise ValueError("unable to parse file content!")
+
+                        self.sqlite.update(
+                            AdsBlockList(url=url, contents=contents, count=count)
+                        )
+                        break
+
+                    except ValueError as err:
+                        logging.error(f"unexpected {err=}, {type(err)=}, {url}")
+                        break
+
+                    except Exception as err:
+                        logging.error(f"unexpected {err=}, {type(err)=}, {url}")
+                        await asyncio.sleep(3)
 
         # blocked_stats
         stats = f"{len(self.blocked_domains)} out of {self.total_domains}"
@@ -124,7 +134,7 @@ class AdsBlock:
         self.total_domains += count
         logging.debug(f"+{count}, {url}")
 
-        return [url, response.text, count]
+        return url, response.text, count
 
     async def setup(self, reload=False, force=False):
         if reload:

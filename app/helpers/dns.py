@@ -24,9 +24,9 @@ class DNSHandler(asyncio.DatagramProtocol):
     # https://github.com/python/cpython/issues/91227
     # https://github.com/python/cpython/issues/127057
     # https://www.fournoas.com/posts/asyncio.DatagramProtocol-stop-responding-when-an-error-is-received/
-    def error_received(self, err):
-        self.server.restart = True
-        logging.error(f"error received, unexpected {err=}, {type(err)=}")
+    # def error_received(self, err):
+    #     self.server.restart = True
+    #     logging.error(f"error received, unexpected {err=}, {type(err)=}")
 
     async def forward_to_doh(
         self, addr, dns_query, query_name, query_type, cache_keyname

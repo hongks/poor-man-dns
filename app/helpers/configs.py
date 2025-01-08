@@ -202,6 +202,7 @@ class ConfigServer:
 
     def close(self):
         self.running = False
+        logging.debug("listener is shutting down!")
 
     async def listen(self):
         logging.debug("listener is up and running.")
