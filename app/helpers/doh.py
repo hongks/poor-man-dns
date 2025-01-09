@@ -236,6 +236,7 @@ class DOHServer:
         self.session = sqlite.session
         self.sqlite = sqlite
         self.running = True
+        self.runner = None
 
         self.ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         self.ssl_context.load_cert_chain(
@@ -243,8 +244,10 @@ class DOHServer:
             keyfile=f"{self.filepath}/certs/key.pem",
         )
 
-    def close(self):
+    async def close(self):
         self.running = False
+        await self.runner.cleanup()
+
         logging.debug("local doh server shutting down!")
 
     async def listen(self):
@@ -254,11 +257,11 @@ class DOHServer:
         app.router.add_get("/dns-query", handler.do_GET)
         app.router.add_post("/dns-query", handler.do_POST)
 
-        runner = web.AppRunner(app)
-        await runner.setup()
+        self.runner = web.AppRunner(app)
+        await self.runner.setup()
 
         site = web.TCPSite(
-            runner,
+            self.runner,
             self.hostname,
             self.port,
             ssl_context=self.ssl_context,

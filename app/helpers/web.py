@@ -163,7 +163,7 @@ async def stats_handler(request):
             .all()
         )
 
-    buffers["daily"] = (
+    buffers["heatmap"] = (
         sqlite.session.query(
             func.date(AdsBlockDomain.updated_on).label("domain"),
             func.sum(AdsBlockDomain.count).label("count"),
@@ -198,19 +198,22 @@ class WEBServer:
 
         self.debug = True if config.logging.level == logging.debug else False
         self.running = True
+        self.runner = None
 
-    def close(self):
+    async def close(self):
         self.running = False
+        await self.runner.cleanup()
+
         logging.debug("local web server shutting down!")
 
     async def listen(self):
         if not self.enable:
             return
 
-        runner = web.AppRunner(app)
-        await runner.setup()
+        self.runner = web.AppRunner(app)
+        await self.runner.setup()
 
-        site = web.TCPSite(runner, host=self.hostname, port=self.port)
+        site = web.TCPSite(self.runner, host=self.hostname, port=self.port)
         await site.start()
 
         logging.getLogger("aiohttp").setLevel(logging.WARNING)

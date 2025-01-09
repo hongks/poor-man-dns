@@ -110,7 +110,7 @@ class SQLite:
 
         Base.metadata.create_all(self.engine)
 
-    def close(self):
+    async def close(self):
         self.running = False
         self.flush()
         self.engine.dispose()

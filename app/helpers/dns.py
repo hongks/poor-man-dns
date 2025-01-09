@@ -208,11 +208,11 @@ class DNSServer:
             timeout=9.0, transport=httpx.AsyncHTTPTransport(retries=3)
         )
 
-    def close(self):
+    async def close(self):
         self.running = False
-
-        # self.http_client.aclose()
         self.transport.close()
+
+        await self.http_client.aclose()
         logging.debug("local dns server shutting down!")
 
     async def listen(self):
