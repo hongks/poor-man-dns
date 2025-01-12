@@ -61,7 +61,7 @@ class Config(Base):
 
     class Logging(Base):
         def __init__(self):
-            self.filename = "poor-man-dns.log"
+            self.filename = "./run/poor-man-dns.log"
             self.format = "%(asctime)s | %(levelname)s in %(module)s: %(message)s"
             self.level = "INFO"
             self.retention = 7
@@ -70,7 +70,7 @@ class Config(Base):
         def __init__(self):
             self.echo = False
             self.track_modifications = False
-            self.uri = "sqlite:///cache.sqlite"
+            self.uri = "sqlite:///./run/cache.sqlite"
 
     class Web(Base):
         def __init__(self):
@@ -79,8 +79,8 @@ class Config(Base):
             self.port = 5000
 
     def __init__(self):
-        self.filename = "config.yml"
-        self.filepath = Path("..").resolve()
+        self.filename = "./run/config.yml"
+        self.filepath = Path(".").resolve()
         self.secret_key = "the-quick-brown-fox-jumps-over-the-lazy-dog!"
 
         self.adapter = self.Adapter()

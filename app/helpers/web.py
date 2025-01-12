@@ -163,7 +163,7 @@ async def stats_handler(request):
             .all()
         )
 
-    buffers["heatmap"] = (
+    buffers["heatmap (utc)"] = (
         sqlite.session.query(
             func.date(AdsBlockDomain.updated_on).label("domain"),
             func.sum(AdsBlockDomain.count).label("count"),
