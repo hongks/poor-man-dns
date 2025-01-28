@@ -13,6 +13,8 @@ adapter:
   interface: "wi-fi"
   ssid: "default"
 
+  reset_on_exit: true
+
 
 # ################################################################################
 # cache

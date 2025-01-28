@@ -210,7 +210,8 @@ class DNSServer:
 
     async def close(self):
         self.running = False
-        self.transport.close()
+        if self.transport:
+            self.transport.close()
 
         await self.http_client.aclose()
         logging.debug("local dns server shutting down!")

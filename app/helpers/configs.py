@@ -13,6 +13,7 @@ from .adsblock import AdsBlock
 from .sqlite import Setting
 
 
+# base class
 class Base:
     def __str__(self):
         return str([{i: f"{self.__dict__[i]}"} for i in self.__dict__])
@@ -25,6 +26,7 @@ class Config(Base):
             self.enable = False
             self.interface = "wi-fi"
             self.ssid = "default"
+            self.reset_on_exit = False
 
     class AdsBlock(Base):
         def __init__(self):
@@ -109,19 +111,24 @@ class Config(Base):
             with file.open("r") as f:
                 configs = yaml.load(f, Loader=yaml.loader.SafeLoader)
 
+                # adapter
                 self.adapter.enable = configs["adapter"]["enable"]
                 self.adapter.interface = configs["adapter"]["interface"]
                 self.adapter.ssid = configs["adapter"]["ssid"]
+                self.adapter.reset_on_exit = configs["adapter"]["reset_on_exit"]
 
+                # adsblock
                 self.adsblock.blacklist = sorted(configs["adsblock"]["blacklist"])
                 self.adsblock.custom = set(configs["adsblock"]["custom"])
                 self.adsblock.reload = configs["adsblock"]["reload"]
                 self.adsblock.whitelist = set(configs["adsblock"]["whitelist"])
 
+                # cache
                 self.cache.enable = configs["cache"]["enable"]
                 self.cache.max_size = configs["cache"]["max_size"]
                 self.cache.ttl = configs["cache"]["ttl"]
 
+                # dns
                 self.dns.hostname = configs["dns"]["hostname"]
                 self.dns.port = configs["dns"]["port"]
                 self.dns.target_doh = configs["dns"]["target_doh"]
@@ -142,11 +149,14 @@ class Config(Base):
 
                 self.dns.custom = {key: value for key, value in sorted(buffers.items())}
 
+                # doh
                 self.doh.hostname = configs["doh"]["hostname"]
                 self.doh.port = configs["doh"]["port"]
 
+                # logging
                 self.logging.level = configs["logging"]["level"].upper()
 
+                # web
                 self.web.enable = configs["web"]["enable"]
                 self.web.hostname = configs["web"]["hostname"]
                 self.web.port = configs["web"]["port"]
@@ -211,7 +221,7 @@ class ConfigServer:
             dt = datetime.now()
 
             if self.config.sync(self.sqlite.session):
-                AdsBlock(self.config, self.sqlite).setup(
+                await AdsBlock(self.config, self.sqlite).setup(
                     reload=True,
                     force=self.config.adsblock.reload,
                 )

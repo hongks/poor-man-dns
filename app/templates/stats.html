@@ -7,7 +7,8 @@
    .card {
       margin: 9px;
    }
-   ul li {
+   table td {
+      padding: 1px 5px 1px 5px;
       font-size: 0.9em;
    }
 </style>
@@ -18,19 +19,24 @@
 
 <div class="row">
    {% for key, value in buffers.items() %}
-   <div class="card border-dark mb-3" style="max-width: 18rem;">
+   <div class="card border-dark mb-3" style="max-width: 28rem;">
       <div class="card-header">{{ key }}</div>
       <div class="card-body">
          <p class="card-text">
-         <ul>
+         <table>
          {%if value %}
             {% for v in value %}
-            <li class="text-nowrap">{{ v.count }} , {{ v.domain }}</li>
+            <tr>
+               <td><i class="bi bi-dot"></i> {{ v.count }}</td>
+               <td class="text-nowrap">{{ v.domain }}</td>
+            </tr>
             {% endfor %}
          {% else %}
-            <li class="text-nowrap">no data available.</li>
+            <tr>
+               <td class="text-nowrap">no data available.</td>
+            </tr>
          {% endif %}
-         </ul>
+         </table>
          </p>
       </div>
    </div>

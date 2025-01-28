@@ -57,13 +57,15 @@ async def service(config, sqlite, adsblock):
 # sub routines
 
 
-def setup_adapter(config):
+def setup_adapter(config, adapter):
     # connect the wifi and nice the process
-    adapter = Adapter(config.adapter)
     p = psutil.Process(os.getpid())
 
     if adapter.supported_platform():
         if config.adapter.enable:
+            adapter.set_dns()
+            time.sleep(1)
+
             adapter.connect()
             time.sleep(3)
 
@@ -128,7 +130,8 @@ def main():
     asyncio.set_event_loop_policy(ConfigSelectorPolicy())
     logging.info("initialized!")
 
-    setup_adapter(config)
+    adapter = Adapter(config.adapter)
+    setup_adapter(config, adapter)
     setup_cache(config, sqlite)
 
     try:
@@ -141,7 +144,9 @@ def main():
         logging.error(f"unexpected {err=}, {type(err)=}")
 
     finally:
-        # adapter.reset_dns(cfg.dns.interface_name)
+        if config.adapter.reset_on_exit:
+            adapter.reset_dns()
+
         logging.info("sayonara!")
 
 

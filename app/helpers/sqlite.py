@@ -77,15 +77,7 @@ class Setting(Base):
 
 class SQLite:
     def __init__(self, config):
-        self.retention = config.logging.retention
-        self.uri = config.sqlite.uri
-
-        self.inserts = []
-        self.updates = []
-        self.lock = asyncio.Lock()
-        self.running = True
-
-        self.engine = create_engine(self.uri, echo=False)
+        self.engine = create_engine(config.sqlite.uri, echo=False)
 
         # apply sqlite concurrency tuning
         with self.engine.connect() as conn:
@@ -110,6 +102,14 @@ class SQLite:
 
         Base.metadata.create_all(self.engine)
 
+        self.lock = asyncio.Lock()
+        self.retention = config.logging.retention
+        self.running = True
+
+        # caches
+        self.inserts = []
+        self.updates = []
+
     async def close(self):
         self.running = False
         self.flush()
@@ -117,9 +117,8 @@ class SQLite:
         logging.debug("listener is shutting down!")
 
     def flush(self):
-        start = time.time()
-
         # quick hack to optimize pure inserts
+        start = time.time()
         buffers = self.inserts.copy()
         counts = len(buffers)
 
@@ -134,6 +133,7 @@ class SQLite:
             )
 
         # updates ...
+        start = time.time()
         buffers = self.updates.copy()
         counts = len(buffers)
 

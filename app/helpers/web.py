@@ -169,7 +169,7 @@ async def stats_handler(request):
             func.sum(AdsBlockDomain.count).label("count"),
         )
         .group_by(func.date(AdsBlockDomain.updated_on))
-        .order_by(AdsBlockDomain.updated_on)
+        .order_by(AdsBlockDomain.updated_on.desc())
         .all()
     )
 
