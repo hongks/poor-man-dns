@@ -155,6 +155,7 @@ class Config(Base):
 
                 # logging
                 self.logging.level = configs["logging"]["level"].upper()
+                self.logging.retention = int(configs["logging"]["retention"])
 
                 # web
                 self.web.enable = configs["web"]["enable"]
@@ -216,6 +217,7 @@ class ConfigServer:
 
     async def listen(self):
         logging.debug("listener is up and running.")
+        await asyncio.sleep(600)
 
         while self.running:
             dt = datetime.now()

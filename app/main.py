@@ -22,7 +22,6 @@ from helpers.sqlite import SQLite, SQLiteHandler
 
 
 async def service(config, sqlite, adsblock):
-    await sqlite.purge()
     await adsblock.setup()  # use cache first
 
     dns_server = DNSServer(config, sqlite, adsblock.blocked_domains)
@@ -36,6 +35,7 @@ async def service(config, sqlite, adsblock):
     for server in servers:
         tasks.append(asyncio.create_task(server.listen()))
 
+    sqlite.purge()
     await asyncio.sleep(1)
     await adsblock.setup(reload=True)
 
@@ -126,14 +126,13 @@ def main():
 
     adsblock = AdsBlock(config, sqlite)
     setup_logging(config, sqlite)
-
-    asyncio.set_event_loop_policy(ConfigSelectorPolicy())
     logging.info("initialized!")
 
     adapter = Adapter(config.adapter)
     setup_adapter(config, adapter)
     setup_cache(config, sqlite)
 
+    asyncio.set_event_loop_policy(ConfigSelectorPolicy())
     try:
         asyncio.run(service(config, sqlite, adsblock), debug=False)
 
@@ -144,8 +143,9 @@ def main():
         logging.error(f"unexpected {err=}, {type(err)=}")
 
     finally:
-        if config.adapter.reset_on_exit:
-            adapter.reset_dns()
+        if adapter.supported_platform():
+            if config.adapter.enable and config.adapter.reset_on_exit:
+                adapter.reset_dns()
 
         logging.info("sayonara!")
 

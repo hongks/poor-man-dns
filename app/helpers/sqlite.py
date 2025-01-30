@@ -4,7 +4,7 @@ import time
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import create_engine, Boolean, Column, DateTime, Integer, Text
+from sqlalchemy import create_engine, delete, Boolean, Column, DateTime, Integer, Text
 from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
 
 
@@ -96,6 +96,7 @@ class SQLite:
             conn.connection.execute(
                 "PRAGMA locking_mode=NORMAL;"
             )  # avoid exclusive locking
+            conn.connection.execute("VACUUM")  # optimize the database
 
         Session = scoped_session(sessionmaker(bind=self.engine))
         self.session = Session()
@@ -158,19 +159,20 @@ class SQLite:
             self.flush()
             await asyncio.sleep(60)  # run every minute
 
-    async def purge(self):
-        dt = datetime.now(tz=timezone.utc) + timedelta(days=self.retention)
-        logging.debug(f"purge logs older than {dt} ...")
+    def purge(self):
+        dt = datetime.now(tz=timezone.utc) - timedelta(days=self.retention)
+        count = self.session.query(Log).filter(Log.updated_on < dt).count()
 
-        counts = 0
-        with self.session as s:
-            rows = s.query(Log).filter(Log.updated_on > dt).all()
-            if rows:
-                counts = len(counts)
-                await s.delete(rows)
-                await s.commit()
+        if count > 0:
+            logging.debug(
+                f"purge logs earlier than {dt.strftime('%Y-%m-%d %H:%M:%S')} ..."
+            )
 
-        logging.debug(f"... done, {counts} purged!")
+            dele = delete(Log).where(Log.updated_on < dt)
+            self.session.execute(dele)
+            self.session.commit()
+
+            logging.debug(f"... done, {count} purged!")
 
     def update(self, data):
         self.updates.append(data)
