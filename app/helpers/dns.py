@@ -32,7 +32,17 @@ class DNSHandler(asyncio.DatagramProtocol):
         self, addr, dns_query, query_name, query_type, cache_keyname
     ):
         try:
-            target_doh = random.choice(self.server.target_doh)
+            target_doh = self.server.target_doh.copy()
+            if self.server.last_target_doh in target_doh:
+                target_doh.remove(self.server.last_target_doh)
+
+            if target_doh:
+                target_doh = random.choice(target_doh)
+            else:
+                target_doh = self.server.last_target_doh
+
+            self.server.last_target_doh = target_doh
+
             logging.info(f"{addr} forward: {cache_keyname}, {target_doh}")
             self.server.sqlite.update(
                 AdsBlockDomain(domain=cache_keyname, type="forward")
@@ -89,18 +99,22 @@ class DNSHandler(asyncio.DatagramProtocol):
 
             logging.debug(f"{addr} response message: {response.to_text()}")
 
+        except httpx.ConnectTimeout as err:
+            logging.error(f"{addr} error forward: {cache_keyname}, {target_doh}\n{err}")
+
+        except httpx.HTTPStatusError as err:
+            logging.error(f"{addr} error forward: {cache_keyname}, {target_doh}\n{err}")
+
         except Exception as err:
-            logging.error(
-                f"{addr} error unhandled: {err}" + f"\n{cache_keyname}, {target_doh}"
+            logging.exception(
+                f"{addr} error unhandled: {err}\n{cache_keyname}, {target_doh}"
             )
 
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.SERVFAIL)
 
         finally:
-            if self.server.cache_enable:
-                self.server.cache_wip.discard(cache_keyname)
-
+            self.server.cache_wip.discard(cache_keyname)
             return response if response else None
 
     async def handle_request(self, data, addr):
@@ -121,8 +135,8 @@ class DNSHandler(asyncio.DatagramProtocol):
             response = dns.message.Message()
             response.set_rcode(dns.rcode.FORMERR)
 
-            logging.error(
-                f"{addr} error invalid query: {err}" + f"\n{data}\n{data.hex()}"
+            logging.exception(
+                f"{addr} error invalid query: {err}\n{data}\n{data.hex()}"
             )
             self.transport.sendto(response.to_wire(), addr)
             return
@@ -195,6 +209,7 @@ class DNSServer:
         self.dns_custom = config.dns.custom
         self.target_doh = config.dns.target_doh
         self.target_mode = config.dns.target_mode
+        self.last_target_doh = None
 
         self.blocked_domains = blocked_domains
         self.restart = True

@@ -30,10 +30,7 @@ async def service(config, sqlite, adsblock):
     config_server = ConfigServer(config, sqlite, [dns_server, doh_server])
 
     servers = [sqlite, dns_server, doh_server, web_server, config_server]
-    tasks = []
-
-    for server in servers:
-        tasks.append(asyncio.create_task(server.listen()))
+    tasks = [asyncio.create_task(server.listen()) for server in servers]
 
     sqlite.purge()
     await asyncio.sleep(1)
@@ -44,8 +41,11 @@ async def service(config, sqlite, adsblock):
     try:
         await asyncio.gather(*tasks, return_exceptions=True)
 
+    except asyncio.CancelledError:
+        logging.debug("service tasks cancelled")
+
     except Exception as err:
-        logging.error(f"unexpected {err=}, {type(err)=}")
+        logging.exception(f"unexpected {err=}, {type(err)=}")
 
     finally:
         for server in servers:
@@ -59,7 +59,7 @@ async def service(config, sqlite, adsblock):
 
 def setup_adapter(config, adapter):
     # connect the wifi and nice the process
-    p = psutil.Process(os.getpid())
+    process = psutil.Process(os.getpid())
 
     if adapter.supported_platform():
         if config.adapter.enable:
@@ -70,13 +70,13 @@ def setup_adapter(config, adapter):
             time.sleep(3)
 
         adapter.get_dns()
-        p.nice(psutil.HIGH_PRIORITY_CLASS)
+        process.nice(psutil.HIGH_PRIORITY_CLASS)
 
     else:
-        p.nice(5)
+        process.nice(5)
 
 
-def setup_cache(config, sqlite):
+def setup_cache(config):
     # set up the caching
     if config.cache.enable:
         config.cache.cache = cachetools.TTLCache(
@@ -103,7 +103,7 @@ def setup_logging(config, sqlite):
 
     logging.basicConfig(
         format=config.logging.format,
-        level=logging.getLevelName(config.logging.level),
+        level=getattr(logging, config.logging.level, logging.INFO),
         handlers=[console_handler, file_handler, sqlite_handler],
     )
 
@@ -130,7 +130,7 @@ def main():
 
     adapter = Adapter(config.adapter)
     setup_adapter(config, adapter)
-    setup_cache(config, sqlite)
+    setup_cache(config)
 
     asyncio.set_event_loop_policy(ConfigSelectorPolicy())
     try:
@@ -140,7 +140,7 @@ def main():
         logging.info("ctrl-c pressed!")
 
     except Exception as err:
-        logging.error(f"unexpected {err=}, {type(err)=}")
+        logging.exception(f"unexpected {err=}, {type(err)=}")
 
     finally:
         if adapter.supported_platform():

@@ -77,25 +77,21 @@ class Setting(Base):
 
 class SQLite:
     def __init__(self, config):
-        self.engine = create_engine(config.sqlite.uri, echo=False)
+        self.engine = create_engine(config.sqlite.uri, echo=config.sqlite.echo)
 
         # apply sqlite concurrency tuning
-        with self.engine.connect() as conn:
-            conn.connection.execute(
-                "PRAGMA journal_mode=WAL;"
-            )  # enable Write-Ahead Logging
-            conn.connection.execute(
-                "PRAGMA synchronous=NORMAL;"
-            )  # reduce sync overhead
-            conn.connection.execute(
-                "PRAGMA cache_size=-16000;"
-            )  # set cache size (negative for KB)
-            conn.connection.execute(
-                "PRAGMA temp_store=MEMORY;"
-            )  # use memory for temporary tables
-            conn.connection.execute(
-                "PRAGMA locking_mode=NORMAL;"
-            )  # avoid exclusive locking
+        pragmas = {
+            "journal_mode": "WAL",  # enable Write-Ahead Logging
+            "synchronous": "NORMAL",  # reduce sync overhead
+            "cache_size": -16000,  # set cache size (negative for KB)
+            "temp_store": "MEMORY",  # use memory for temporary tables
+            "locking_mode": "NORMAL",  # avoid exclusive locking
+        }
+
+        with self.engine.begin() as conn:
+            for key, value in pragmas.items():
+                conn.connection.execute(f"PRAGMA {key}={value};")
+
             conn.connection.execute("VACUUM")  # optimize the database
 
         Session = scoped_session(sessionmaker(bind=self.engine))
@@ -119,26 +115,24 @@ class SQLite:
 
     def flush(self):
         # quick hack to optimize pure inserts
-        start = time.time()
-        buffers = self.inserts.copy()
-        counts = len(buffers)
+        tic = time.time()
 
-        if counts > 0:
+        if self.inserts:
+            buffers = self.inserts.copy()
             for buffer in buffers:
                 self.session.add(buffer)
                 self.inserts.pop(0)
 
             self.session.commit()
             logging.debug(
-                f"flushing {counts} inserts in {time.time()- start:.3f} seconds."
+                f"flushing {len(buffers)} inserts in {time.time() - tic:.3f} seconds."
             )
 
         # updates ...
-        start = time.time()
-        buffers = self.updates.copy()
-        counts = len(buffers)
+        tic = time.time()
 
-        if counts > 0:
+        if self.updates:
+            buffers = self.updates.copy()
             for buffer in buffers:
                 self.parse(buffer)
                 self.session.commit()
@@ -146,7 +140,7 @@ class SQLite:
                 self.updates.remove(buffer)
 
             logging.debug(
-                f"flushing {counts} updates in {time.time()- start:.3f} seconds."
+                f"flushing {len(buffers)} updates in {time.time() - tic:.3f} seconds."
             )
 
     def insert(self, data):
@@ -158,24 +152,6 @@ class SQLite:
         while self.running:
             self.flush()
             await asyncio.sleep(60)  # run every minute
-
-    def purge(self):
-        dt = datetime.now(tz=timezone.utc) - timedelta(days=self.retention)
-        count = self.session.query(Log).filter(Log.updated_on < dt).count()
-
-        if count > 0:
-            logging.debug(
-                f"purge logs earlier than {dt.strftime('%Y-%m-%d %H:%M:%S')} ..."
-            )
-
-            dele = delete(Log).where(Log.updated_on < dt)
-            self.session.execute(dele)
-            self.session.commit()
-
-            logging.debug(f"... done, {count} purged!")
-
-    def update(self, data):
-        self.updates.append(data)
 
     def parse(self, data):
         dt = datetime.now(tz=timezone.utc)
@@ -233,6 +209,24 @@ class SQLite:
                     updated_on=dt,
                 )
                 self.session.add(row)
+
+    def purge(self):
+        dt = datetime.now(tz=timezone.utc) - timedelta(days=self.retention)
+        count = self.session.query(Log).filter(Log.updated_on < dt).count()
+
+        if count > 0:
+            logging.debug(
+                f"purge logs earlier than {dt.strftime('%Y-%m-%d %H:%M:%S')} ..."
+            )
+
+            dele = delete(Log).where(Log.updated_on < dt)
+            self.session.execute(dele)
+            self.session.commit()
+
+            logging.debug(f"... done, {count} purged!")
+
+    def update(self, data):
+        self.updates.append(data)
 
 
 class SQLiteHandler(logging.Handler):

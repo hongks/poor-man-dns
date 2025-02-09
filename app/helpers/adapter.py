@@ -29,7 +29,7 @@ class Adapter:
             logging.error(f"command failed: {command}. error: {err}")
 
         except Exception as err:
-            logging.error(f"unexpected {err=}, {type(err)=}, {command}")
+            logging.exception(f"unexpected {err=}, {type(err)=}, {command}")
 
         return None
 

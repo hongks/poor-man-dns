@@ -37,7 +37,7 @@ async def config_handler(request):
         "mismatched": False,
     }
 
-    file = Path(config.filename)
+    file = Path(config.filename).resolve()
     config_file["lastmodified"] = datetime.fromtimestamp(file.stat().st_mtime)
 
     with file.open("r") as f:
@@ -50,8 +50,8 @@ async def config_handler(request):
 
     config_file["sha256"] = sha256.hexdigest()
 
-    rows = sqlite.session.query(Setting).filter_by(key="config-sha256").first()
-    if rows.value != config_file["sha256"]:
+    row = sqlite.session.query(Setting).filter_by(key="config-sha256").first()
+    if row and row.value != config_file["sha256"]:
         config_file["mismatched"] = True
 
     # adsblock list
@@ -77,11 +77,7 @@ async def help_handler(request):
 async def home_handler(request):
     # get the latest log
     file = Path(config.logging.filename)
-
-    logs = []
-    if file.exists():
-        with file.open("r") as f:
-            logs = [line.strip() for line in f.readlines()]
+    logs = file.read_text().splitlines() if file.exists() else []
 
     # services
     rows = (
@@ -130,14 +126,13 @@ async def query_handler(request):
 
     if value:
         rows = (
-            sqlite.session.query(AdsBlockList)
+            sqlite.session.query(AdsBlockList.url)
             .filter(AdsBlockList.contents.ilike(f"%{value}%"))
             .order_by(AdsBlockList.updated_on.desc())
             .all()
         )
-        rows = [row.url for row in rows]
 
-    return web.json_response({"results": rows})
+    return web.json_response({"results": [row.url for row in rows]})
 
 
 async def service_handler(request):
@@ -176,15 +171,20 @@ async def stats_handler(request):
     return render_template("stats.html", request, {"buffers": buffers})
 
 
-app.router.add_get("/config", config_handler)
-app.router.add_get("/help", help_handler)
-app.router.add_get("/", home_handler)
-app.router.add_get("/home", home_handler)
-app.router.add_get("/license", license_handler)
-app.router.add_get("/query", query_handler)
-app.router.add_get("/query/{value}", query_handler)
-app.router.add_get("/service", service_handler)
-app.router.add_get("/stats", stats_handler)
+routes = [
+    ("/config", config_handler),
+    ("/help", help_handler),
+    ("/", home_handler),
+    ("/home", home_handler),
+    ("/license", license_handler),
+    ("/query", query_handler),
+    ("/query/{value}", query_handler),
+    ("/service", service_handler),
+    ("/stats", stats_handler),
+]
+
+for path, handler in routes:
+    app.router.add_get(path, handler)
 
 
 class WEBServer:

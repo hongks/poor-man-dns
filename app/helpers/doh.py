@@ -83,7 +83,17 @@ class DOHHandler:
                 self.server.cache_wip.add(cache_keyname)
 
         try:
-            target_doh = random.choice(self.server.target_doh)
+            target_doh = self.server.target_doh.copy()
+            if self.server.last_target_doh in target_doh:
+                target_doh.remove(self.server.last_target_doh)
+
+            if target_doh:
+                target_doh = random.choice(target_doh)
+            else:
+                target_doh = self.server.last_target_doh
+
+            self.server.last_target_doh = target_doh
+
             logging.info(f"{remote_addr} forward: {cache_keyname}, {target_doh}")
             self.server.sqlite.update(
                 AdsBlockDomain(domain=cache_keyname, type="forward")
@@ -159,13 +169,18 @@ class DOHHandler:
                 body=response.to_wire(),
             )
 
+        except httpx.ConnectTimeout as err:
+            logging.error(f"{addr} error forward: {cache_keyname}, {target_doh}\n{err}")
+
+        except httpx.HTTPStatusError as err:
+            logging.error(f"{addr} error forward: {cache_keyname}, {target_doh}\n{err}")
+
         except Exception as err:
-            logging.error(f"{remote_addr} error unhandled: {err}")
+            logging.exception(f"{remote_addr} error unhandled: {err}")
             return web.Response(status=500, body="internal server error")
 
         finally:
-            if self.server.cache_enable:
-                self.server.cache_wip.discard(cache_keyname)
+            self.server.cache_wip.discard(cache_keyname)
 
     # curl -kvH "accept: application/dns-message"
     #   "https://127.0.0.1:5053/dns-query?dns=q80BAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
@@ -187,7 +202,9 @@ class DOHHandler:
             query_type = dns.rdatatype.to_text(dns_type)
 
         except Exception as err:
-            logging.error(f"{request.remote} error invalid query: {err}\n{dns_query}")
+            logging.exception(
+                f"{request.remote} error invalid query: {err}\n{dns_query}"
+            )
             return web.Response(status=400, body="bad request: invalid query")
 
         return await self.do_something(
@@ -210,7 +227,7 @@ class DOHHandler:
             query_type = dns.rdatatype.to_text(dns_type)
 
         except Exception as err:
-            logging.error(f"{request.remote} error invalid query:\n{err}\n{data}")
+            logging.exception(f"{request.remote} error invalid query:\n{err}\n{data}")
             return web.Response(status=400, body="bad request: unsupported query")
 
         return await self.do_something(
@@ -229,6 +246,7 @@ class DOHServer:
         self.dns_custom = config.dns.custom
         self.target_doh = config.dns.target_doh
         self.target_mode = config.dns.target_mode
+        self.last_target_doh = None
 
         self.blocked_domains = blocked_domains
         self.filepath = config.filepath

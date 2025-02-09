@@ -162,6 +162,10 @@ class Config(Base):
                 self.web.hostname = configs["web"]["hostname"]
                 self.web.port = configs["web"]["port"]
 
+        except yaml.YAMLError as err:
+            print(f"error parsing yml file: {err}")
+            return None
+
         except Exception as err:
             print(f"unexpected {err=}, {type(err)=}")
             return None

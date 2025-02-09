@@ -1,27 +1,17 @@
-FROM python:3.11
+FROM python:3.11-slim
 
-RUN mkdir /poor-main-dns/run
-
-WORKDIR /poor-main-dns
-
-COPY config.yml ./run
-
+WORKDIR /poor-main-dns/
 COPY requirements.txt .
 
-COPY app app
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir -r requirements.txt
 
-COPY certs certs
+COPY app/ app/
+COPY certs/ certs/
 
-RUN pip3 install --no-cache-dir --upgrade pip wheel
+WORKDIR /poor-main-dns/run/
+COPY ../config.yml .
 
-RUN pip3 install --no-cache-dir -r requirements.txt
-
-EXPOSE 53
-
-EXPOSE 5050
-
-EXPOSE 5053
-
-WORKDIR /poor-main-dns/run
+EXPOSE 53 5050 5053
 
 CMD [ "python",  "-u", "../app/main.py" ]

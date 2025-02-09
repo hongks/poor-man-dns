@@ -58,7 +58,7 @@ class AdsBlock:
                         break
 
                     except Exception as err:
-                        logging.error(f"unexpected {err=}, {type(err)=}, {url}")
+                        logging.exception(f"unexpected {err=}, {type(err)=}, {url}")
                         await asyncio.sleep(3)
 
         # blocked_stats
