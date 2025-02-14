@@ -99,11 +99,11 @@ class DNSHandler(asyncio.DatagramProtocol):
 
             logging.debug(f"{addr} response message: {response.to_text()}")
 
-        except httpx.ConnectTimeout as err:
+        except (httpx.ConnectTimeout, httpx.HTTPStatusError) as err:
             logging.error(f"{addr} error forward: {cache_keyname}, {target_doh}\n{err}")
 
-        except httpx.HTTPStatusError as err:
-            logging.error(f"{addr} error forward: {cache_keyname}, {target_doh}\n{err}")
+            response = dns.message.make_response(dns_query)
+            response.set_rcode(dns.rcode.SERVFAIL)
 
         except Exception as err:
             logging.exception(
