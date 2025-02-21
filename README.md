@@ -75,7 +75,36 @@ here are some example scenarios:
 
 ## configuration
 
-check the poor-man-dns/run/config.xml.
+1. check the poor-man-dns/run/config.xml.
+2. to configure wifi, commands are easier. open the command prompt in administrator mode:
+
+   * get the wifi ssid, and update adapter > ssid in the config.xml:
+      ```
+      $ netsh wlan show profiles interface="wi-fi"
+      ```
+
+   * set up the default, global wifi interface to use local dns:
+      ```
+      $ netsh interface ipv4 set dns wi-fi static 127.0.0.1 validate=no
+      ```
+      this is the same as adapter > enable in the config.xml.
+
+   * ensure wifi interface change successful:
+      ```
+      $ netsh interface ipv4 show config wi-fi
+      ```
+
+   * reset the wifi interface to default dns configuration:
+      ```
+      $ netsh interface ipv4 set dns wi-fi dhcp
+      ```
+      this is the same as adapter > reset_on_exit in the config.xml.
+
+   * to list all interfaces and its dns configuration:
+      ```
+      $ netsh interface ipv4 show dnsserver
+      ```
+      you can replace the "wi-fi" with "ethernet" if needed. use "" if the interface name has space.
 
 
 ## frequently asked questions
