@@ -37,39 +37,37 @@ here are some example scenarios:
 ## advance usage
 
 1. ensure these pre-requisites have been set-up:
-   ```
    * windows operating system
    * python v3.12
    * git
-   ```
 
 2. git clone the poor-man-dns-repo:
    ```
-   $ git clone https://github.com/hongks/poor-man-dns.git
+   git clone https://github.com/hongks/poor-man-dns.git
    ```
 
 3. create the python virtual environment:
    ```
-   $ cd poor-man-dns
-   $ python -m venv venv
+   cd poor-man-dns
+   python -m venv venv
    ```
 
 4. Install the python dependecies:
    ```
-   $ venv/scripts/activate
-   $ pip install -r requirements.txt
+   venv/scripts/activate
+   pip install -r requirements.txt
    ```
 
 5. run the poor-man-dns:
    ```
-   $ cd run
-   $ python -u ../app/main.py
+   cd run
+   python -u ../app/main.py
    ```
 
 6. update repo / pips:
    ```
-   $ git pull origin
-   $ pip install --upgrade -r requirements.txt
+   git pull origin
+   pip install --upgrade -r requirements.txt
    ```
 
 
@@ -80,29 +78,29 @@ here are some example scenarios:
 
    * get the wifi ssid, and update adapter > ssid in the config.xml:
       ```
-      $ netsh wlan show profiles interface="wi-fi"
+      netsh wlan show profiles interface="wi-fi"
       ```
 
    * set up the default, global wifi interface to use local dns:
       ```
-      $ netsh interface ipv4 set dns wi-fi static 127.0.0.1 validate=no
+      netsh interface ipv4 set dns wi-fi static 127.0.0.1 validate=no
       ```
       this is the same as adapter > enable in the config.xml.
 
    * ensure wifi interface change successful:
       ```
-      $ netsh interface ipv4 show config wi-fi
+      netsh interface ipv4 show config wi-fi
       ```
 
    * reset the wifi interface to default dns configuration:
       ```
-      $ netsh interface ipv4 set dns wi-fi dhcp
+      netsh interface ipv4 set dns wi-fi dhcp
       ```
       this is the same as adapter > reset_on_exit in the config.xml.
 
    * to list all interfaces and its dns configuration:
       ```
-      $ netsh interface ipv4 show dnsserver
+      netsh interface ipv4 show dnsserver
       ```
       you can replace the "wi-fi" with "ethernet" if needed. use "" if the interface name has space.
 
@@ -118,7 +116,7 @@ here are some example scenarios:
 ## troubleshooting
 
 1. executable file:
-   * in most cases, removing the **cache.sqlite**, and re-run the executable will help out.
+   * in most cases, removing the **cache.sqlite**, and re-run the executable will sort the issue.
 
 2. git clone:
    * pull the latest version, and re-run.
