@@ -3,9 +3,10 @@
 
 
 # ################################################################################
-# if enable, will connect the wifi ssid on start. use this cmd to get the ssid:
+# if enable, will connect to the wifi ssid on start. use this cmd to get the ssid:
 # netsh wlan show profiles interface="wi-fi"
 #
+# required admin rights.
 # not supported in linux.
 
 adapter:
@@ -45,7 +46,8 @@ dns:
 
 
 # ################################################################################
-# use self sign cert. one option, use mkcert.
+# use self-sign cert. one option, use mkcert.
+# or update the certs in the certs folder.
 
 doh:
   hostname: "0.0.0.0"
