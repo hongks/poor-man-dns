@@ -42,7 +42,7 @@ async def service(config, sqlite, adsblock):
         await asyncio.gather(*tasks, return_exceptions=True)
 
     except asyncio.CancelledError:
-        logging.debug("service tasks cancelled")
+        logging.debug("service tasks cancelled!")
 
     except Exception as err:
         logging.exception(f"unexpected {err=}, {type(err)=}")
@@ -73,7 +73,10 @@ def setup_adapter(config, adapter):
         process.nice(psutil.HIGH_PRIORITY_CLASS)
 
     else:
-        process.nice(5)
+        try:
+            process.nice(-5)
+        except psutil.AccessDenied:
+            logging.warning("access denied, possibly running as user privilege!")
 
 
 def setup_cache(config):

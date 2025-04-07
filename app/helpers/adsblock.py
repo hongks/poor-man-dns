@@ -53,6 +53,9 @@ class AdsBlock:
                         )
                         break
 
+                    except httpx.ConnectError:
+                        logging.error(f"failed to connect: {url}")
+
                     except ValueError as err:
                         logging.error(f"unexpected {err=}, {type(err)=}, {url}")
                         break

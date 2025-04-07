@@ -4,7 +4,6 @@ import random
 import time
 
 import dns.message
-import dns.query
 import dns.rdatatype
 import httpx
 
