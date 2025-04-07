@@ -15,4 +15,6 @@ HEALTHCHECK CMD curl -fks http://localhost:5050/ || exit 1
 
 EXPOSE 53 5050 5053
 
+STOPSIGNAL SIGINT
+
 CMD [ "python",  "-X", "dev", "app/main.py" ]

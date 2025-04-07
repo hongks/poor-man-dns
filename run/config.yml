@@ -67,7 +67,7 @@ web:
 # logging
 
 logging:
-  level: "info"
+  level: "debug"
   retention: 7
 
 
