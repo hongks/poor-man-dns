@@ -38,7 +38,7 @@ dns:
   target_doh:
     - "https://1.1.1.1/dns-query"
     - "https://8.8.8.8/dns-query"
-    - "https://9.9.9.9:5053/dns-query"
+    # - "https://9.9.9.9:5053/dns-query"
 
   custom:
     - "1.0.0.127.in-addr.arpa:localhost."
@@ -67,7 +67,7 @@ web:
 # logging
 
 logging:
-  level: "debug"
+  level: "info"
   retention: 7
 
 

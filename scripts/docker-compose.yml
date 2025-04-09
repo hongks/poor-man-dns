@@ -1,0 +1,9 @@
+services:
+    poor-man-dns:
+        build: ./poor-man-dns
+        container_name: poor-man-dns
+        image: poor-man-dns:latest
+        network_mode: "host"
+        restart: always
+        volumes:
+            - "./poor-man-dns:/poor-man-dns"

@@ -116,9 +116,9 @@ class SQLite:
     def flush(self):
         # quick hack to optimize pure inserts
         tic = time.time()
-
         if self.inserts:
             buffers = self.inserts.copy()
+
             for buffer in buffers:
                 self.session.add(buffer)
                 self.inserts.pop(0)
@@ -130,18 +130,27 @@ class SQLite:
 
         # updates ...
         tic = time.time()
-
         if self.updates:
             buffers = self.updates.copy()
+
             for buffer in buffers:
                 self.parse(buffer)
                 self.session.commit()
-
                 self.updates.remove(buffer)
 
             logging.debug(
                 f"flushing {len(buffers)} updates in {time.time() - tic:.3f} seconds."
             )
+
+        # use a NEW, raw connection for checkpoint
+        # with self.engine.raw_connection() as raw_conn:
+        #     cursor = raw_conn.cursor()
+        #     cursor.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        #     cursor.close()
+        #     raw_conn.commit()
+
+        with self.engine.begin() as conn:
+            conn.connection.execute("PRAGMA wal_checkpoint(TRUNCATE);")
 
     def insert(self, data):
         self.inserts.append(data)

@@ -168,10 +168,8 @@ class DOHHandler:
                 body=response.to_wire(),
             )
 
-        except (httpx.ConnectTimeout, httpx.HTTPStatusError) as err:
-            logging.error(
-                f"{remote_addr} error forward: {cache_keyname}, {target_doh}\n{err}"
-            )
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.HTTPStatusError):
+            logging.error(f"{remote_addr} error forward: {cache_keyname}, {target_doh}")
             return web.Response(status=500, body="internal server error")
 
         except Exception as err:

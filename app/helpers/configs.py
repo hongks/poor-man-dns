@@ -238,7 +238,7 @@ class ConfigServer:
                 logging.info(f"{self.config.filename} has changed, reloaded!")
 
             # cron style scheduling
-            next = dt + timedelta(minutes=10)
+            next = dt + timedelta(minutes=1)
             sleep = (next - datetime.now()).total_seconds()
 
             if sleep > 0:
