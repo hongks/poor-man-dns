@@ -227,6 +227,7 @@ def main(adapter, ddns, dns, doh, web, generate, debug, reset, version):
             file.rename(f"./run/config_{timestamp}.yml")
             logging.info(f"existing config file renamed to config_{timestamp}.yml")
 
+        Path("./run").mkdir(exist_ok=True)
         shutil.copyfile(config.template, config.filename)
         logging.info("skeleton config file generated!")
         return
