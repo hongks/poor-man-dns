@@ -5,158 +5,207 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+from cachetools import TTLCache
+
 from .sqlite import AdsBlockList, Setting
 
 
 class AdsBlock:
     def __init__(self, config, sqlite):
-        self.blocked_domains = set()
-        self.total_domains = 0
+        self.sqlite = sqlite
+        self.session = sqlite.Session()
 
+        self.reload = config.adsblock.reload
         self.blacklist = config.adsblock.blacklist
         self.custom = config.adsblock.custom
         self.whitelist = config.adsblock.whitelist
-        self.reload = config.adsblock.reload
-        self.session = sqlite.session
-        self.sqlite = sqlite
 
-    async def load_blacklist(self, urls):
+        self.blocked = set()
+        self.total = 0
+
+    def cache(self):
+        # blocked_domains
+        row = self.session.query(Setting).filter_by(key="blocked-domains").first()
+        self.blocked = set(row.value.split("\n")) if row else set()
+
+        # blocked_stats
         row = self.session.query(Setting).filter_by(key="blocked-stats").first()
-        dt = datetime.now(tz=timezone.utc)
+        stats = row.value if row else "0 out of 0"
+        logging.info(f"cached blocked domains loaded, {stats}!")
+
+        self.parse("custom", self.custom)
+        self.parse("whitelist", self.whitelist)
+        return row.updated_on if row else None
+
+    async def fetch(self):
+        logging.info(f"parsing {len(self.blacklist)} adblock lists ...")
+        self.blocked.clear()
+
+        async with httpx.AsyncClient(
+            verify=False,
+            timeout=9.0,
+            follow_redirects=True,
+            transport=httpx.AsyncHTTPTransport(retries=3),
+        ) as client:
+            for url in self.blacklist:
+                count = 0
+
+                try:
+                    response = await client.get(url)
+                    response.raise_for_status()
+
+                    for line in response.text.splitlines():
+                        line = line.strip()
+
+                        if line and not line.startswith(("!", "#")):
+                            domain = (
+                                line.split()[0].replace("||", "").replace("^", "") + "."
+                            )
+                            self.blocked.add(domain)
+                            count += 1
+                            # logging.debug(f"parsed {domain} from {line}")
+
+                    self.total += count
+                    logging.debug(f"+{count}, {url}")
+
+                    self.sqlite.update(
+                        AdsBlockList(
+                            url=str(response.url), contents=response.text, count=count
+                        )
+                    )
+
+                except (
+                    httpx.ConnectError,
+                    httpx.ConnectTimeout,
+                    httpx.ReadTimeout,
+                ) as err:
+                    logging.warning(f"{type(err).__name__}: {url}")
+
+                except Exception as err:
+                    logging.exception(f"unexpected {err=}, {type(err)=}, {url}")
+
+        # blocked_domains
+        self.sqlite.update(
+            Setting(
+                key="blocked-domains",
+                value="\n".join(sorted(self.blocked)),
+            )
+        )
+
+        # blocked_stats
+        stats = f"{len(self.blocked)} out of {self.total}"
+        self.sqlite.update(Setting(key="blocked-stats", value=stats))
+
+        logging.info(f"... done, loaded {stats}!")
+
+    # parse blacklist, custom, whitelist domains
+    def parse(self, type, domains):
+        count, total = 0, 0
+        label = "custom blacklist" if type == "custom" else type
+
+        for domain in domains:
+            if not domain:
+                continue
+
+            total += 1
+            buffer = f"{domain}."
+
+            # blacklist / custom
+            if type in ["blacklist", "custom"] and buffer not in self.blocked:
+                self.blocked.add(buffer)
+                count += 1
+                logging.debug(f"+{label}ed {buffer}")
+
+            # whitelist
+            elif type == "whitelist" and buffer in self.blocked:
+                self.blocked.remove(buffer)
+                count += 1
+                logging.debug(f"+whitelisted {buffer}")
+
+        logging.info(f"loaded {label}ed, {count} out of {total}!")
+
+
+class ADSServer:
+    def __init__(self, config, sqlite):
+        self.config = config
+        self.sqlite = sqlite
+        self.session = sqlite.Session()
+
+        self.adsblock = AdsBlock(config, sqlite)
+        self.cache = TTLCache(
+            maxsize=self.config.cache.max_size, ttl=self.config.cache.ttl
+        )
+        self.locks = {}
+        self.running = True
+
+    def get_blocked_domains(self):
+        return self.adsblock.blocked
+
+    def lock(self, key):
+        if key not in self.locks:
+            self.locks[key] = asyncio.Lock()
+
+        return self.locks[key]
+
+    def set(self, key, value):
+        self.cache[key] = value
+        self.unlock(key)
+
+    def unlock(self, key):
+        if key in self.locks:
+            self.locks.pop(key, None)
+
+    async def close(self):
+        self.running = False
+        logging.debug("listener is shutting down!")
+
+    async def load(self):
+        now = datetime.now(tz=timezone.utc)
+        updated_on = self.adsblock.cache()
 
         if (
-            not self.reload
-            and row
-            and dt.date() < (row.updated_on + timedelta(days=1)).date()
+            not self.adsblock.reload
+            and updated_on
+            and now.date() < (updated_on + timedelta(days=1)).date()
         ):
-            return False
+            return
 
         logging.info(
             "generating new cache, or cache is empty, or cache is older than a day!"
         )
-        logging.info(f"parsing {len(urls)} adblock lists ...")
 
-        self.blocked_domains = set()
-        async with httpx.AsyncClient(verify=False, timeout=9.0) as client:
-            for url in urls:
-                for i in range(1, 4):
-                    try:
-                        response = await client.get(url, follow_redirects=True)
-                        response.raise_for_status()
+        await self.adsblock.fetch()
+        self.adsblock.parse("custom", self.adsblock.custom)
+        self.adsblock.parse("whitelist", self.adsblock.whitelist)
 
-                        url, contents, count = self.parse(response)
-                        if not (url and contents and count):
-                            raise ValueError("unable to parse file content!")
-
-                        self.sqlite.update(
-                            AdsBlockList(url=url, contents=contents, count=count)
-                        )
-                        break
-
-                    except httpx.ConnectError:
-                        logging.error(f"failed to connect: {url}")
-
-                    except httpx.ConnectTimeout:
-                        logging.error(f"connection timeout: {url}")
-
-                    except ValueError as err:
-                        logging.error(f"unexpected {err=}, {type(err)=}, {url}")
-                        break
-
-                    except Exception as err:
-                        logging.exception(f"unexpected {err=}, {type(err)=}, {url}")
-                        await asyncio.sleep(3)
-
-        # blocked_stats
-        stats = f"{len(self.blocked_domains)} out of {self.total_domains}"
-        self.sqlite.update(Setting(key="blocked-stats", value=stats))
-
-        # blocked_domains
-        self.blocked_domains = sorted(self.blocked_domains)
-        self.sqlite.update(
-            Setting(key="blocked-domains", value="\n".join(self.blocked_domains))
+    async def listen(self):
+        logging.info(
+            f"cache-enable: {str(self.config.cache.enable).lower()}, "
+            f"max-size: {self.config.cache.max_size}, ttl: {self.config.cache.ttl}."
         )
+        await self.load()
+        logging.info("listener is up and running.")
 
-        logging.info(f"... done, loaded {stats}!")
-        return True
+        while self.running:
+            if self.config.sync(self.session):
+                logging.info(f"{self.config.filename} has changed, reloading ...")
+                self.adsblock = AdsBlock(self.config, self.sqlite)
+                await self.load()
+                logging.info("... done reload!")
 
-    def load_cache(self):
-        # blocked_stats
-        row = self.session.query(Setting).filter_by(key="blocked-stats").first()
-        stats = row.value if row else "0 out of 0"
+            await asyncio.sleep(60)
 
-        # blocked_domains
-        row = self.session.query(Setting).filter_by(key="blocked-domains").first()
-        if row:
-            self.blocked_domains = set(row.value.split("\n"))
+    async def get_or_set(self, key, fetch_func):
+        async with self.lock(key):
+            result = await fetch_func()
 
-        logging.info(f"loaded cached blocked domains, {stats}!")
+        self.unlock(key)
+        return result
 
-    def load_custom(self, lists):
-        count = 0
-        total = 0
+    async def get(self, key):
+        lock = self.locks.get(key)
+        if lock and lock.locked():
+            async with lock:
+                pass  # wait for any ongoing fetch
 
-        for domain in lists:
-            if domain:
-                total += 1
-                buffer = f"{domain}."
-
-                if buffer not in self.blocked_domains:
-                    self.blocked_domains.add(buffer)
-                    count += 1
-                    logging.debug(f"blacklisted {buffer}")
-
-        logging.info(f"loaded custom blacklist, {count} out of {total}!")
-
-    def load_whitelist(self, lists):
-        count = 0
-        total = 0
-
-        for domain in lists:
-            if domain:
-                total += 1
-                buffer = f"{domain}."
-
-                if buffer in self.blocked_domains:
-                    self.blocked_domains.remove(buffer)
-                    count += 1
-                    logging.debug(f"whitelisted {buffer}")
-
-        logging.info(f"loaded whitelist, {count} out of {total}!")
-
-    def parse(self, response):
-        url = str(response.url)
-        count = 0
-
-        for line in response.text.splitlines():
-            line = line.strip()
-
-            if line and not line.startswith(("!", "#")):
-                domain = line.split()[0].replace("||", "").replace("^", "") + "."
-                self.blocked_domains.add(domain)
-                count += 1
-                # logging.debug(f"parsed {domain} from {line}")
-
-        self.total_domains += count
-        logging.debug(f"+{count}, {url}")
-
-        return url, response.text, count
-
-    async def setup(self, reload=False, force=False):
-        if reload:
-            if force:
-                # re-set up the list of domains to be blocked on config change detected
-                self.reload = True
-
-            if await self.load_blacklist(self.blacklist):
-                self.load_custom(self.custom)
-                self.load_whitelist(self.whitelist)
-
-                # re-set reload to false to prevent repeatative reload
-                self.reload = False
-
-        else:
-            # load cache first!
-            self.load_cache()
-            self.load_custom(self.custom)
-            self.load_whitelist(self.whitelist)
+        return self.cache.get(key)

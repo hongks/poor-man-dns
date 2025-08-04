@@ -20,32 +20,34 @@ class Adapter:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=60,
             )
             if success_message:
                 logging.info(success_message)
             return result.stdout
 
-        except subprocess.CalledProcessError as err:
-            logging.error(f"command failed: {command}. error: {err}")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as err:
+            logging.error(f"'{command}' failed. error: {err}")
 
         except Exception as err:
             logging.exception(f"unexpected {err=}, {type(err)=}, {command}")
 
         return None
 
-    def supported_platform(self):
+    def is_platform_supported(self):
         os = platform.system().lower()
 
         if os != "windows":
             logging.warning(f"unsupported platform, {os}. skipping.")
             return False
 
-        return True
+        else:
+            return True
 
     # netsh wlan show profiles interface="wi-fi"
     # netsh wlan connect ssid=default name=default
     def connect(self):
-        if not self.supported_platform():
+        if not self.is_platform_supported():
             return
 
         self.run_command(
@@ -55,7 +57,7 @@ class Adapter:
 
     # netsh interface ipv4 show config wi-fi
     def get_dns(self):
-        if not self.supported_platform():
+        if not self.is_platform_supported():
             return
 
         output = self.run_command(
@@ -68,7 +70,7 @@ class Adapter:
 
     # netsh interface ipv4 set dns wi-fi dhcp
     def reset_dns(self):
-        if not self.supported_platform():
+        if not self.is_platform_supported():
             return
 
         self.run_command(
@@ -78,7 +80,7 @@ class Adapter:
 
     # netsh interface ipv4 set dns wi-fi static 127.0.0.1 validate=no
     def set_dns(self, primary_dns="127.0.0.1"):
-        if not self.supported_platform():
+        if not self.is_platform_supported():
             return
 
         self.run_command(

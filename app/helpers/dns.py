@@ -30,16 +30,16 @@ class DNSHandler(asyncio.DatagramProtocol):
     async def forward_to_doh(
         self, addr, dns_query, query_name, query_type, cache_keyname
     ):
+        response = None
+
         try:
             target_doh = self.server.target_doh.copy()
             if self.server.last_target_doh in target_doh:
                 target_doh.remove(self.server.last_target_doh)
 
-            if target_doh:
-                target_doh = random.choice(target_doh)
-            else:
-                target_doh = self.server.last_target_doh
-
+            target_doh = (
+                random.choice(target_doh) if target_doh else self.server.last_target_doh
+            )
             self.server.last_target_doh = target_doh
 
             logging.info(f"{addr} forward: {cache_keyname}, {target_doh}")
@@ -49,10 +49,7 @@ class DNSHandler(asyncio.DatagramProtocol):
 
             # dns-json ###########################################################
             if self.server.target_mode == "dns-json":
-                headers = {
-                    "accept": "application/dns-json",
-                    "accept-encoding": "gzip",
-                }
+                headers = {"accept": "application/dns-json", "accept-encoding": "gzip"}
                 params = {"name": query_name, "type": query_type}
 
                 doh_response = await self.server.http_client.get(
@@ -67,9 +64,7 @@ class DNSHandler(asyncio.DatagramProtocol):
                         query_name,
                         answer["TTL"],
                         dns.rdataclass.IN,
-                        dns.rdatatype.from_text(
-                            dns.rdatatype.to_text(answer["type"]),
-                        ),
+                        dns.rdatatype.from_text(dns.rdatatype.to_text(answer["type"])),
                         answer["data"],
                     )
                     response.answer.append(rrset)
@@ -91,15 +86,24 @@ class DNSHandler(asyncio.DatagramProtocol):
 
             # cache ##############################################################
             if self.server.cache_enable:
-                self.server.cache[cache_keyname] = {
-                    "response": response.answer,
-                    "timestamp": time.time(),
-                }
+                self.server.adsblock.set(
+                    cache_keyname,
+                    {
+                        "response": response.answer,
+                        "timestamp": time.time(),
+                    },
+                )
 
             logging.debug(f"{addr} response message: {response.to_text()}")
 
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.HTTPStatusError):
-            logging.error(f"{addr} error forward: {cache_keyname}, {target_doh}")
+        except (
+            httpx.ConnectError,
+            httpx.ConnectTimeout,
+            httpx.HTTPStatusError,
+            httpx.ReadTimeout,
+        ) as err:
+            logging.error(f"{addr} error forward: {cache_keyname}")
+            logging.error(f"+{type(err).__name__}, {target_doh}")
 
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.SERVFAIL)
@@ -112,13 +116,9 @@ class DNSHandler(asyncio.DatagramProtocol):
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.SERVFAIL)
 
-        finally:
-            self.server.cache_wip.discard(cache_keyname)
-            return response if response else None
+        return response if response else None
 
     async def handle_request(self, data, addr):
-        logging.debug(f"{addr} request data: {data}")
-
         # parse dns message ######################################################
         try:
             dns_query = dns.message.from_wire(data)
@@ -128,7 +128,7 @@ class DNSHandler(asyncio.DatagramProtocol):
             query_type = dns.rdatatype.to_text(dns_type)
 
             cache_keyname = f"{query_name}:{query_type}"
-            logging.debug(f"{addr} received: {query_name} {query_type}")
+            logging.debug(f"{addr} received: {cache_keyname}")
 
         except Exception as err:
             response = dns.message.Message()
@@ -153,55 +153,51 @@ class DNSHandler(asyncio.DatagramProtocol):
             response.answer.append(rrset)
 
             logging.info(f"{addr} custom-hit: {cache_keyname}")
-            self.transport.sendto(response.to_wire(), addr)
             self.server.sqlite.update(
                 AdsBlockDomain(domain=cache_keyname, type="custom-hit")
             )
+            self.transport.sendto(response.to_wire(), addr)
             return
 
         # blocked domain #########################################################
-        if query_name in self.server.blocked_domains:
+        if query_name in self.server.adsblock.get_blocked_domains():
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.NXDOMAIN)
 
             logging.info(f"{addr} blacklisted: {cache_keyname}")
-            self.transport.sendto(response.to_wire(), addr)
             self.server.sqlite.update(
                 AdsBlockDomain(domain=cache_keyname, type="blacklisted")
             )
+            self.transport.sendto(response.to_wire(), addr)
             return
 
         # cache ##################################################################
         if self.server.cache_enable:
-            if cache_keyname in self.server.cache_wip:
-                await asyncio.sleep(3)
-
-            if cache_keyname in self.server.cache:
+            cached = await self.server.adsblock.get(cache_keyname)
+            if cached:
                 response = dns.message.make_response(dns_query)
-                response.answer = self.server.cache[cache_keyname]["response"]
+                response.answer = cached["response"]
 
                 logging.info(f"{addr} cache-hit: {cache_keyname}")
-                self.transport.sendto(response.to_wire(), addr)
                 self.server.sqlite.update(
                     AdsBlockDomain(domain=cache_keyname, type="cache-hit")
                 )
+                self.transport.sendto(response.to_wire(), addr)
                 return
 
-            else:
-                self.server.cache_wip.add(cache_keyname)
-
         # forward_to_doh #########################################################
-        response = await self.forward_to_doh(
-            addr, dns_query, query_name, query_type, cache_keyname
+        response = await self.server.adsblock.get_or_set(
+            cache_keyname,
+            lambda: self.forward_to_doh(
+                addr, dns_query, query_name, query_type, cache_keyname
+            ),
         )
         self.transport.sendto(response.to_wire(), addr)
 
 
 class DNSServer:
-    def __init__(self, config, sqlite, blocked_domains):
+    def __init__(self, config, sqlite, adsblock):
         self.cache_enable = config.cache.enable
-        self.cache_wip = config.cache.wip
-        self.cache = config.cache.cache
 
         self.hostname = config.dns.hostname
         self.port = config.dns.port
@@ -210,12 +206,12 @@ class DNSServer:
         self.target_mode = config.dns.target_mode
         self.last_target_doh = None
 
-        self.blocked_domains = blocked_domains
+        self.adsblock = adsblock
         self.restart = True
         self.running = True
         self.transport = None
 
-        self.session = sqlite.session
+        self.session = sqlite.Session()
         self.sqlite = sqlite
 
         self.http_client = httpx.AsyncClient(
@@ -224,17 +220,16 @@ class DNSServer:
 
     async def close(self):
         self.running = False
+
+        await self.http_client.aclose()
         if self.transport:
             self.transport.close()
 
-        await self.http_client.aclose()
         logging.debug("local dns server shutting down!")
 
     async def listen(self):
         while self.running:
             if self.restart:
-                self.restart = False
-
                 if self.transport:
                     self.transport.close()
                     self.transport = None
@@ -250,6 +245,8 @@ class DNSServer:
                         ),
                         timeout=3,  # timeout in seconds
                     )
+                    self.restart = False
+
                 except TimeoutError:
                     self.restart = True
 
@@ -260,9 +257,13 @@ class DNSServer:
 
             await asyncio.sleep(1)
 
-    def reload(self, config, blocked_domains):
+    async def reload(self, config, adsblock):
+        await self.close()
+        self.cache_enable = config.cache.enable
+
         self.dns_custom = config.dns.custom
         self.target_doh = config.dns.target_doh
         self.target_mode = config.dns.target_mode
 
-        self.blocked_domains = blocked_domains
+        self.adsblock = adsblock
+        await self.listen()

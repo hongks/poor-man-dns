@@ -1,15 +1,46 @@
-FROM python:3.12
+# ################################################################################
+# builder
+
+FROM python:3.12-slim-bookworm AS builder
+ENV PYTHONUNBUFFERED 1
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc
+
+RUN python -m venv /opt/venv/
+ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /poor-man-dns/
+
 COPY requirements.txt .
 
 RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir -r requirements.txt
+    pip3 install --no-cache-dir --upgrade --requirement requirements.txt
 
 COPY app/ app/
 COPY certs/ certs/
 
 COPY run/config.yml run/.
+
+
+# ################################################################################
+# final
+
+FROM python:3.12-slim-bookworm AS final
+
+RUN apt-get update && \
+    apt-get install -y curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /poor-man-dns/
+
+COPY --from=builder /poor-man-dns/ /poor-man-dns/
+COPY --from=builder /opt/venv/ /opt/venv/
+
+USER root
+
+ENV PATH="/opt/venv/bin:$PATH"
 
 HEALTHCHECK CMD curl -fks http://localhost:5050/ || exit 1
 

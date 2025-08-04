@@ -7,6 +7,7 @@
    .card {
       margin: 9px;
    }
+
    table td {
       padding: 1px 5px 1px 5px;
       font-size: 0.9em;
@@ -24,18 +25,18 @@
       <div class="card-body">
          <p class="card-text">
          <table>
-         {%if value %}
+            {%if value %}
             {% for v in value %}
             <tr>
                <td><i class="bi bi-dot"></i> {{ v.count }}</td>
                <td class="text-nowrap">{{ v.domain }}</td>
             </tr>
             {% endfor %}
-         {% else %}
+            {% else %}
             <tr>
                <td class="text-nowrap">no data available.</td>
             </tr>
-         {% endif %}
+            {% endif %}
          </table>
          </p>
       </div>

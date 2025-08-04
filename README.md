@@ -1,4 +1,4 @@
-# poor-man-dns: a simple, lightweight dns and doh server
+# poor-man-dns: a simple, lightweight ddns, dns and doh server
 
 
 ## overview
@@ -14,7 +14,7 @@ it can be configured as:
 1. **dns server**: provides secure dns resolution.
 2. **doh server**: offers encrypted dns resolution over secure https connections.
 3. **dual dns and doh server**: provides both dns and doh server functionality.
-
+4. **ddns server**: provides ddns resolution.
 
 ## where it can be used, usages
 
@@ -52,19 +52,30 @@ here are some example scenarios:
    python -m venv venv
    ```
 
-4. Install the python dependecies:
+4. install the python dependecies:
    ```
    venv/scripts/activate
    pip install -r requirements.txt
    ```
 
-5. run the poor-man-dns:
+5. create the poor-man-dns config file:
    ```
    cd run
-   python -u ../app/main.py
+   python -u ../app/main.py -de
    ```
 
-6. update repo / pips:
+6. configure the poor-man-dns config file:
+   ```
+   notepad run/config.yml
+   ```
+
+7. run the poor-man-dns:
+   ```
+   cd run
+   python -u ../app/main.py -d
+   ```
+
+8. update repo / pips:
    ```
    git pull origin
    pip install --upgrade -r requirements.txt
@@ -109,8 +120,13 @@ here are some example scenarios:
 1. linux compatibility, possible:
    * tested in ubuntu, but need to disable the network manager.
 
-2. dockerfile available.
-   * possible, but not tested.
+2. dockerfile available:
+   * tested in ubuntu, but need to disable the network manager.
+
+3. console support:
+   ```
+   python -u app/main -dh
+   ```
 
 
 ## troubleshooting

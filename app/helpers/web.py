@@ -1,9 +1,11 @@
 import asyncio
 import hashlib
 import logging
+import re
 
 from collections import OrderedDict
 from datetime import datetime
+from html import escape
 from pathlib import Path
 
 import jinja2
@@ -15,20 +17,26 @@ from sqlalchemy import or_, func
 from .configs import Config
 from .sqlite import SQLite, AdsBlockDomain, AdsBlockList, Log, Setting
 
+# define typed app keys
+CONFIG_KEY = web.AppKey("config")
+SQLITE_KEY = web.AppKey("sqlite")
 
-# load configurations
-config = Config()
-sqlite = SQLite(config)
 
-# initialize aiohttp app
-app = web.Application()
-setup_jinja2(app, loader=jinja2.FileSystemLoader(f"{config.filepath}/app/templates"))
+# helper
+def compute_file_sha256(path):
+    sha256 = hashlib.sha256()
 
-# static file handling
-app.router.add_static("/static/", path=f"{config.filepath}/app/static", name="static")
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            sha256.update(chunk)
+
+    return sha256.hexdigest()
 
 
 async def config_handler(request):
+    config = request.app[CONFIG_KEY]
+    sqlite = request.app[SQLITE_KEY]
+
     # config.xml
     config_file = {
         "lastmodified": None,
@@ -38,31 +46,26 @@ async def config_handler(request):
     }
 
     file = Path(config.filename).resolve()
-    config_file["lastmodified"] = datetime.fromtimestamp(file.stat().st_mtime)
+    if file.exists():
+        config_file["lastmodified"] = datetime.fromtimestamp(file.stat().st_mtime)
+        config_file["data"] = file.read_text()
+        config_file["sha256"] = compute_file_sha256(file)
 
-    with file.open("r") as f:
-        config_file["data"] = "".join(f.readlines())
-
-    sha256 = hashlib.sha256()
-    with file.open("rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            sha256.update(chunk)
-
-    config_file["sha256"] = sha256.hexdigest()
-
-    row = sqlite.session.query(Setting).filter_by(key="config-sha256").first()
+    row = sqlite.Session().query(Setting).filter_by(key="config-sha256").first()
     if row and row.value != config_file["sha256"]:
         config_file["mismatched"] = True
 
     # adsblock list
-    rows = (
-        sqlite.session.query(AdsBlockList)
+    adsblock_list = [
+        {
+            "url": row.url,
+            "count": row.count,
+            "updated_on": row.updated_on,
+        }
+        for row in sqlite.Session()
+        .query(AdsBlockList)
         .order_by(AdsBlockList.updated_on.desc())
         .all()
-    )
-    adsblock_list = [
-        {"url": row.url, "counts": row.count, "updated_on": row.updated_on}
-        for row in rows
     ]
 
     return render_template(
@@ -71,17 +74,26 @@ async def config_handler(request):
 
 
 async def help_handler(request):
-    return render_template("help.html", request, {})
+    config = request.app[CONFIG_KEY]
+
+    file = Path(config.template)
+    configs = escape(file.read_text()) if file.exists() else ""
+
+    return render_template("help.html", request, {"configs": configs})
 
 
 async def home_handler(request):
+    config = request.app[CONFIG_KEY]
+    sqlite = request.app[SQLITE_KEY]
+
     # get the latest log
     file = Path(config.logging.filename)
     logs = file.read_text().splitlines() if file.exists() else []
 
     # services
     rows = (
-        sqlite.session.query(Log)
+        sqlite.Session()
+        .query(Log)
         .filter(
             or_(
                 Log.value.ilike("% running on %"),
@@ -93,26 +105,27 @@ async def home_handler(request):
     )
 
     services = {}
+    pattern = re.compile(r" on (.+)\.")
+
     for row in rows:
-        service = {
-            "name": row.module,
-            "started_on": row.updated_on,
-            "listening_on": None,
-        }
+        name = "cache" if "cache-enable:" in row.value else row.module
+        match = pattern.search(row.value.lower())
+        listening = match.group(1) if match else None
 
-        listening_on = row.value.lower()
-        if row.module == "main" and "cache-enable:" in listening_on:
-            service["name"] = "cache"
-            service["listening_on"] = listening_on
-        else:
-            service["listening_on"] = listening_on[listening_on.find(" on ") + 4 : -1]
+        if name not in services:
+            services[name] = {
+                "name": name,
+                "started_on": row.updated_on,
+                "listening_on": listening,
+            }
 
-        if service["name"] not in services:
-            services[service["name"]] = service
-
-    services = OrderedDict(sorted(services.items()))
     return render_template(
-        "home.html", request, {"services": services, "logs": "\n".join(logs)}
+        "home.html",
+        request,
+        {
+            "services": dict(sorted(services.items())),
+            "logs": "\n".join(escape(line) for line in logs),
+        },
     )
 
 
@@ -121,6 +134,7 @@ async def license_handler(request):
 
 
 async def query_handler(request):
+    sqlite = request.app[SQLITE_KEY]
     value = request.match_info.get("value")
     rows = None
 
@@ -140,6 +154,8 @@ async def service_handler(request):
 
 
 async def stats_handler(request):
+    sqlite = request.app[SQLITE_KEY]
+
     buffers = OrderedDict(
         [
             ("forward", None),
@@ -151,7 +167,8 @@ async def stats_handler(request):
 
     for key in buffers.keys():
         buffers[key] = (
-            sqlite.session.query(AdsBlockDomain)
+            sqlite.Session()
+            .query(AdsBlockDomain)
             .filter_by(type=key)
             .order_by(AdsBlockDomain.count.desc())
             .limit(20)
@@ -159,7 +176,8 @@ async def stats_handler(request):
         )
 
     buffers["heatmap (utc)"] = (
-        sqlite.session.query(
+        sqlite.Session()
+        .query(
             func.date(AdsBlockDomain.updated_on).label("domain"),
             func.sum(AdsBlockDomain.count).label("count"),
         )
@@ -171,20 +189,43 @@ async def stats_handler(request):
     return render_template("stats.html", request, {"buffers": buffers})
 
 
-routes = [
-    ("/config", config_handler),
-    ("/help", help_handler),
-    ("/", home_handler),
-    ("/home", home_handler),
-    ("/license", license_handler),
-    ("/query", query_handler),
-    ("/query/{value}", query_handler),
-    ("/service", service_handler),
-    ("/stats", stats_handler),
-]
+def create_app():
+    # load configurations
+    config = Config()
+    sqlite = SQLite(config)
 
-for path, handler in routes:
-    app.router.add_get(path, handler)
+    # initialize aiohttp app
+    app = web.Application()
+    app[CONFIG_KEY] = config
+    app[SQLITE_KEY] = sqlite
+
+    setup_jinja2(
+        app,
+        autoescape=True,
+        loader=jinja2.FileSystemLoader(f"{config.filepath}/app/templates"),
+    )
+
+    # static file handling
+    app.router.add_static(
+        "/static/", path=f"{config.filepath}/app/static", name="static"
+    )
+
+    routes = [
+        ("/config", config_handler),
+        ("/help", help_handler),
+        ("/", home_handler),
+        ("/home", home_handler),
+        ("/license", license_handler),
+        ("/query", query_handler),
+        ("/query/{value}", query_handler),
+        ("/service", service_handler),
+        ("/stats", stats_handler),
+    ]
+
+    for path, handler in routes:
+        app.router.add_get(path, handler)
+
+    return app
 
 
 class WEBServer:
@@ -193,16 +234,22 @@ class WEBServer:
         self.hostname = config.web.hostname
         self.port = config.web.port
 
-        self.session = sqlite.session
+        # not used for now
+        self.session = sqlite.Session()
         self.sqlite = sqlite
 
         self.debug = True if config.logging.level == logging.debug else False
         self.running = True
         self.runner = None
 
+        self.app = create_app()
+        self.shutdown_event = asyncio.Event()
+
     async def close(self):
         self.running = False
-        await self.runner.cleanup()
+        self.shutdown_event.set()
+        if self.runner:
+            await self.runner.cleanup()
 
         logging.debug("local web server shutting down!")
 
@@ -210,7 +257,7 @@ class WEBServer:
         if not self.enable:
             return
 
-        self.runner = web.AppRunner(app)
+        self.runner = web.AppRunner(self.app)
         await self.runner.setup()
 
         site = web.TCPSite(self.runner, host=self.hostname, port=self.port)
@@ -219,5 +266,4 @@ class WEBServer:
         logging.getLogger("aiohttp").setLevel(logging.WARNING)
         logging.info(f"local web server running on {self.hostname}:{self.port}.")
 
-        while self.running:
-            await asyncio.sleep(3600)
+        await self.shutdown_event.wait()

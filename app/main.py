@@ -1,19 +1,24 @@
 import asyncio
-import os
 import logging
+import os
+import shutil
 import time
 
+from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
+from pathlib import Path
 
-import cachetools
+import click
 import psutil
 
-from helpers.configs import Config, ConfigSelectorPolicy, ConfigServer
-from helpers.adapter import Adapter
-from helpers.adsblock import AdsBlock
+from helpers.adsblock import ADSServer
+from helpers.ddns import DDNSServer
 from helpers.dns import DNSServer
 from helpers.doh import DOHServer
 from helpers.web import WEBServer
+
+from helpers.adapter import Adapter
+from helpers.configs import Config, ConfigSelectorPolicy
 from helpers.sqlite import SQLite, SQLiteHandler
 
 
@@ -21,24 +26,30 @@ from helpers.sqlite import SQLite, SQLiteHandler
 # service routines
 
 
-async def service(config, sqlite, adsblock):
-    await adsblock.setup()  # use cache first
+async def service(config, sqlite, *, ddns, dns, doh, web):
+    servers = [sqlite]
 
-    dns_server = DNSServer(config, sqlite, adsblock.blocked_domains)
-    doh_server = DOHServer(config, sqlite, adsblock.blocked_domains)
-    web_server = WEBServer(config, sqlite)
-    config_server = ConfigServer(config, sqlite, [dns_server, doh_server])
+    if web:
+        servers.append(WEBServer(config, sqlite))
 
-    servers = [sqlite, dns_server, doh_server, web_server, config_server]
-    tasks = [asyncio.create_task(server.listen()) for server in servers]
+    if ddns:
+        servers.append(DDNSServer(config, sqlite))
 
-    sqlite.purge()
-    await asyncio.sleep(1)
-    await adsblock.setup(reload=True)
+    ads_server = ADSServer(config, sqlite)
+    if dns or doh:
+        servers.append(ads_server)
 
-    logging.info("press ctrl+c to quit!")
+    if dns:
+        servers.append(DNSServer(config, sqlite, ads_server))
+
+    if doh:
+        servers.append(DOHServer(config, sqlite, ads_server))
 
     try:
+        tasks = [asyncio.create_task(server.listen()) for server in servers]
+        await asyncio.sleep(5)
+        logging.info("press ctrl+c to quit!")
+
         await asyncio.gather(*tasks, return_exceptions=True)
 
     except asyncio.CancelledError:
@@ -48,7 +59,7 @@ async def service(config, sqlite, adsblock):
         logging.exception(f"unexpected {err=}, {type(err)=}")
 
     finally:
-        for server in servers:
+        for server in reversed(servers):
             if server:
                 await server.close()
 
@@ -57,11 +68,16 @@ async def service(config, sqlite, adsblock):
 # sub routines
 
 
+def echo(level, message):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+    click.echo(f"{timestamp} | {level.upper():7} | main: {message}")
+
+
 def setup_adapter(config, adapter):
     # connect the wifi and nice the process
     process = psutil.Process(os.getpid())
 
-    if adapter.supported_platform():
+    if adapter.is_platform_supported():
         if config.adapter.enable:
             adapter.set_dns()
             time.sleep(1)
@@ -76,20 +92,11 @@ def setup_adapter(config, adapter):
         try:
             process.nice(-5)
         except psutil.AccessDenied:
-            logging.warning("access denied, possibly running as user privilege!")
-
-
-def setup_cache(config):
-    # set up the caching
-    if config.cache.enable:
-        config.cache.cache = cachetools.TTLCache(
-            maxsize=config.cache.max_size, ttl=config.cache.ttl
-        )
-
-    logging.info(
-        f"cache-enable: {str(config.cache.enable).lower()}"
-        + f", max-size: {config.cache.max_size}, ttl: {config.cache.ttl}."
-    )
+            logging.warning(
+                "unable to nice, access denied, possibly running under user privilege!",
+            )
+        except Exception as err:
+            logging.exception(f"unexpected {err=}, {type(err)=}")
 
 
 def setup_logging(config, sqlite):
@@ -97,21 +104,20 @@ def setup_logging(config, sqlite):
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
 
-    file_handler = TimedRotatingFileHandler(
-        config.logging.filename, when="midnight", backupCount=3
-    )
-
-    # log to sqlite
-    sqlite_handler = SQLiteHandler(sqlite)
-
     logging.basicConfig(
         format=config.logging.format,
         level=getattr(logging, config.logging.level, logging.INFO),
-        handlers=[console_handler, file_handler, sqlite_handler],
+        handlers=[
+            console_handler,
+            TimedRotatingFileHandler(
+                config.logging.filename, when="midnight", backupCount=3
+            ),
+            SQLiteHandler(sqlite),
+        ],
     )
 
     # ... and silent the others
-    for logger in ["httpx", "httpcore", "urllib3", "werkzeug", "watchdog"]:
+    for logger in ["httpcore", "httpx", "paramiko", "urllib3", "watchdog", "werkzeug"]:
         logging.getLogger(logger).setLevel(logging.WARNING)
 
     # misc
@@ -122,22 +128,127 @@ def setup_logging(config, sqlite):
 # main routine
 
 
-def main():
-    config = Config()
-    sqlite = SQLite(config)
-    config.sync(sqlite.session)
+@click.command()
+@click.option(
+    "--adapter",
+    "-a",
+    is_flag=True,
+    help="get computer adapter status.",
+)
+@click.option(
+    "--ddns",
+    "-n",
+    is_flag=True,
+    help="register ipv4 to configured ddns provider.",
+)
+@click.option(
+    "--dns",
+    "-s",
+    is_flag=True,
+    help="start up the dns server.",
+)
+@click.option(
+    "--doh",
+    "-o",
+    is_flag=True,
+    help="start up the doh server.",
+)
+@click.option(
+    "--web",
+    "-w",
+    is_flag=True,
+    help="start up the experimental web server.",
+)
+@click.option(
+    "--generate",
+    "-g",
+    is_flag=True,
+    help="generate skeleton config.xml.",
+)
+@click.option(
+    "--debug",
+    "-d",
+    is_flag=True,
+    help="enable debug mode, overriding the debug level in config.xml.",
+)
+@click.option(
+    "--reset",
+    "-e",
+    is_flag=True,
+    help="remove caches and logs in the run folder.",
+)
+@click.option(
+    "--version",
+    "-v",
+    is_flag=True,
+    help="show the version and exit.",
+)
+@click.help_option(
+    "--help",
+    "-h",
+    help="show this message and exit.",
+)
+def main(adapter, ddns, dns, doh, web, generate, debug, reset, version):
+    """poor-man-dns: a simple, lightweight dns and doh server"""
 
-    adsblock = AdsBlock(config, sqlite)
+    config = Config()
+    if version:  # ###############################################################
+        click.echo(f"version {config.version}")
+        return
+
+    if reset:  # #################################################################
+        echo("info", "resetting, removing caches and logs ...")
+        tic = time.time()
+
+        for pattern in ["cache.sqlite*", "poor-man-dns.log*"]:
+            for file in Path("./run").glob(pattern):
+                if file.exists():
+                    file.unlink()
+                    echo("info", f"- deleted: {file}")
+
+        echo("info", f"... done, reset in {time.time() - tic:.3f}s!")
+        return
+
+    sqlite = SQLite(config)
+    config.sync(sqlite.Session())
+
+    if debug:  # #################################################################
+        config.logging.level = "DEBUG"
+        echo("info", "debug mode on!")
+
     setup_logging(config, sqlite)
     logging.info("initialized!")
+    sqlite.purge()
 
-    adapter = Adapter(config.adapter)
-    setup_adapter(config, adapter)
-    setup_cache(config)
+    if generate:  # ##############################################################
+        file = Path(config.filename)
+        if file.exists():
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file.rename(f"./run/config_{timestamp}.yml")
+            logging.info(f"existing config file renamed to config_{timestamp}.yml")
+
+        shutil.copyfile(config.template, config.filename)
+        logging.info("skeleton config file generated!")
+        return
+
+    services = (ddns, dns, doh, web)
+    _adapter = Adapter(config.adapter)
+
+    if adapter or not any(services):  # ##############################################
+        setup_adapter(config, _adapter)
+        if adapter:
+            return
+
+    # If any service is unset, enable them all
+    if not any(services):
+        ddns = dns = doh = web = True
 
     asyncio.set_event_loop_policy(ConfigSelectorPolicy())
     try:
-        asyncio.run(service(config, sqlite, adsblock), debug=False)
+        asyncio.run(
+            service(config, sqlite, ddns=ddns, dns=dns, doh=doh, web=web),
+            debug=False,
+        )
 
     except KeyboardInterrupt:
         logging.info("ctrl-c pressed!")
@@ -146,11 +257,11 @@ def main():
         logging.exception(f"unexpected {err=}, {type(err)=}")
 
     finally:
-        if adapter.supported_platform():
-            if config.adapter.enable and config.adapter.reset_on_exit:
-                adapter.reset_dns()
+        if config.adapter.enable and _adapter and _adapter.is_platform_supported():
+            if config.adapter.reset_on_exit:
+                _adapter.reset_dns()
 
-        logging.info("sayonara!")
+    logging.info("sayonara!")
 
 
 # ################################################################################

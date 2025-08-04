@@ -18,9 +18,20 @@ class DOHHandler:
     def __init__(self, server):
         self.server = server
 
-    async def do_something(self, remote_addr, dns_query, query_name, query_type):
-        cache_keyname = f"{query_name}:{query_type}"
-        logging.debug(f"{remote_addr} received: {query_name} {query_type}")
+    async def handle_query(self, addr, data):
+        try:
+            dns_query = dns.message.from_wire(data)
+            query_name = str(dns_query.question[0].name)
+
+            dns_type = dns_query.question[0].rdtype
+            query_type = dns.rdatatype.to_text(dns_type)
+
+            cache_keyname = f"{query_name}:{query_type}"
+            logging.debug(f"{addr} received: {cache_keyname}")
+
+        except Exception as err:
+            logging.exception(f"{addr} error invalid query: {err}\n{data}")
+            return web.Response(status=400, body=b"bad request: invalid query")
 
         # custom dns #############################################################
         if query_name in self.server.dns_custom and query_type in ["PTR", "A"]:
@@ -34,10 +45,10 @@ class DOHHandler:
             )
             response.answer.append(rrset)
 
+            logging.info(f"{(addr,)} custom-hit: {cache_keyname}")
             self.server.sqlite.update(
                 AdsBlockDomain(domain=cache_keyname, type="custom-hit")
             )
-            logging.info(f"{remote_addr} custom-hit: {cache_keyname}")
             return web.Response(
                 status=200,
                 content_type="application/dns-message",
@@ -45,14 +56,14 @@ class DOHHandler:
             )
 
         # blocked domain #########################################################
-        if query_name in self.server.blocked_domains:
+        if query_name in self.server.adsblock.get_blocked_domains():
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.NXDOMAIN)
 
+            logging.info(f"{(addr,)} blacklisted: {cache_keyname}")
             self.server.sqlite.update(
                 AdsBlockDomain(domain=cache_keyname, type="blacklisted")
             )
-            logging.info(f"{remote_addr} blacklisted: {cache_keyname}")
             return web.Response(
                 status=200,
                 content_type="application/dns-message",
@@ -61,76 +72,68 @@ class DOHHandler:
 
         # cache ##################################################################
         if self.server.cache_enable:
-            if cache_keyname in self.server.cache_wip:
-                await asyncio.sleep(3)
-
-            if cache_keyname in self.server.cache:
+            cached = await self.server.adsblock.get(cache_keyname)
+            if cached:
                 response = dns.message.make_response(dns_query)
-                response.answer = self.server.cache[cache_keyname]["response"]
+                response.answer = cached["response"]
 
+                logging.info(f"{(addr,)} cache-hit: {cache_keyname}")
                 self.server.sqlite.update(
                     AdsBlockDomain(domain=cache_keyname, type="cache-hit")
                 )
-                logging.info(f"{remote_addr} cache-hit: {cache_keyname}")
                 return web.Response(
                     status=200,
                     content_type="application/dns-message",
                     body=response.to_wire(),
                 )
 
-            else:
-                self.server.cache_wip.add(cache_keyname)
+        return await self.server.adsblock.get_or_set(
+            cache_keyname,
+            lambda: self.forward_to_doh(
+                addr, dns_query, query_name, query_type, cache_keyname
+            ),
+        )
+
+    async def forward_to_doh(
+        self, addr, dns_query, query_name, query_type, cache_keyname
+    ):
+        response = None
 
         try:
             target_doh = self.server.target_doh.copy()
             if self.server.last_target_doh in target_doh:
                 target_doh.remove(self.server.last_target_doh)
 
-            if target_doh:
-                target_doh = random.choice(target_doh)
-            else:
-                target_doh = self.server.last_target_doh
-
+            target_doh = (
+                random.choice(target_doh) if target_doh else self.server.last_target_doh
+            )
             self.server.last_target_doh = target_doh
 
-            logging.info(f"{remote_addr} forward: {cache_keyname}, {target_doh}")
+            logging.info(f"{(addr,)} forward: {cache_keyname}, {target_doh}")
             self.server.sqlite.update(
                 AdsBlockDomain(domain=cache_keyname, type="forward")
             )
 
             # dns-json ###########################################################
             if self.server.target_mode == "dns-json":
-                headers = {
-                    "accept": "application/dns-json",
-                    "accept-encoding": "gzip",
-                }
+                headers = {"accept": "application/dns-json", "accept-encoding": "gzip"}
                 params = {"name": query_name, "type": query_type}
 
-                async with httpx.AsyncClient(
-                    timeout=9.0, transport=httpx.AsyncHTTPTransport(retries=3)
-                ) as client:
-                    doh_response = await client.get(
-                        target_doh, headers=headers, params=params
-                    )
-
-                    doh_response.raise_for_status()
-                    doh_response_json = doh_response.json()
-
-                response = dns.message.make_response(
-                    dns.message.make_query(query_name, query_type)
+                doh_response = await self.server.http_client.get(
+                    target_doh, headers=headers, params=params
                 )
+                doh_response.raise_for_status()
+                doh_response_json = doh_response.json()
 
+                response = dns.message.make_response(dns_query)
                 for answer in doh_response_json.get("Answer", []):
                     rrset = dns.rrset.from_text(
                         query_name,
                         answer["TTL"],
                         dns.rdataclass.IN,
-                        dns.rdatatype.from_text(
-                            dns.rdatatype.to_text(answer["type"]),
-                        ),
+                        dns.rdatatype.from_text(dns.rdatatype.to_text(answer["type"])),
                         answer["data"],
                     )
-
                     response.answer.append(rrset)
 
             # dns-message ########################################################
@@ -141,102 +144,76 @@ class DOHHandler:
                     "accept-encoding": "gzip",
                 }
 
-                async with httpx.AsyncClient(
-                    timeout=9.0, transport=httpx.AsyncHTTPTransport(retries=3)
-                ) as client:
-                    doh_response = await client.post(
-                        target_doh,
-                        headers=headers,
-                        content=dns_query.to_wire(),
-                    )
+                doh_response = await self.server.http_client.post(
+                    target_doh, headers=headers, content=dns_query.to_wire()
+                )
+                doh_response.raise_for_status()
 
-                    doh_response.raise_for_status()
-                    response = dns.message.from_wire(doh_response.content)
-
-            logging.debug(f"{remote_addr} response message: {response.to_text()}")
+                response = dns.message.from_wire(doh_response.content)
 
             # cache ##############################################################
             if self.server.cache_enable:
-                self.server.cache[cache_keyname] = {
-                    "response": response.answer,
-                    "timestamp": time.time(),
-                }
+                self.server.adsblock.set(
+                    cache_keyname,
+                    {
+                        "response": response.answer,
+                        "timestamp": time.time(),
+                    },
+                )
 
+            logging.debug(f"{(addr,)} response message: {response.to_text()}")
             return web.Response(
                 status=200,
                 content_type="application/dns-message",
                 body=response.to_wire(),
             )
 
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.HTTPStatusError):
-            logging.error(f"{remote_addr} error forward: {cache_keyname}, {target_doh}")
-            return web.Response(status=500, body="internal server error")
+        except (
+            httpx.ConnectError,
+            httpx.ConnectTimeout,
+            httpx.HTTPStatusError,
+            httpx.ReadTimeout,
+        ) as err:
+            logging.error(f"{addr} error forward: {cache_keyname}")
+            logging.error(f"+{type(err).__name__}, {target_doh}")
 
-        except Exception as err:
-            logging.exception(f"{remote_addr} error unhandled: {err}")
-            return web.Response(status=500, body="internal server error")
-
-        finally:
-            self.server.cache_wip.discard(cache_keyname)
-
-    # curl -kvH "accept: application/dns-message"
-    #   "https://127.0.0.1:5053/dns-query?dns=q80BAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
-    async def do_GET(self, request):
-        data = await request.text()
-        logging.debug(f"{request.remote} request data: {data}")
-
-        dns_query_wire = request.query.get("dns")
-        if not dns_query_wire:
-            logging.error(f"{request.remote} error unsupported query:\n{self.path}")
-            return web.Response(status=400, body="bad request: unsupported query")
-
-        try:
-            data = base64.urlsafe_b64decode(dns_query_wire + "==")
-            dns_query = dns.message.from_wire(data)
-            query_name = str(dns_query.question[0].name)
-
-            dns_type = dns_query.question[0].rdtype
-            query_type = dns.rdatatype.to_text(dns_type)
+            return web.Response(status=500, body=b"internal server error")
 
         except Exception as err:
             logging.exception(
-                f"{request.remote} error invalid query: {err}\n{dns_query}"
+                f"{(addr,)} error unhandled: {err}\n{cache_keyname}, {target_doh}"
             )
-            return web.Response(status=400, body="bad request: invalid query")
+            return web.Response(status=500, body=b"internal server error")
 
-        return await self.do_something(
-            request.remote, dns_query, query_name, query_type
-        )
+    # from base64 import urlsafe_b64encode; import dns.message
+    # data = dns.message.make_query("example.com.", "A").to_wire()
+    # data = urlsafe_b64encode(data).decode("utf-8").rstrip("=")
+    #
+    # curl -kvH "accept: application/dns-message" "https://127.0.0.1:5053/dns-query?dns=<data>"
+    async def do_GET(self, request):
+        data = await request.text()
+        dns_query_wire = request.query.get("dns")
+
+        if not dns_query_wire:
+            logging.error(f"{request.remote} error unsupported query:\n{data}")
+            return web.Response(status=400, body=b"bad request: unsupported query")
+
+        data = base64.urlsafe_b64decode(dns_query_wire + "==")
+        return await self.handle_query(request.remote, data)
 
     async def do_POST(self, request):
         data = await request.read()
-        logging.debug(f"{request.remote} request data: {data}")
 
         if request.content_type != "application/dns-message":
             logging.error(f"{request.remote} error unsupported query:\n{data}")
-            return web.Response(status=400, body="bad request: unsupported query")
+            return web.Response(status=400, body=b"bad request: unsupported query")
 
-        try:
-            dns_query = dns.message.from_wire(data)
-            query_name = str(dns_query.question[0].name)
-
-            dns_type = dns_query.question[0].rdtype
-            query_type = dns.rdatatype.to_text(dns_type)
-
-        except Exception as err:
-            logging.exception(f"{request.remote} error invalid query:\n{err}\n{data}")
-            return web.Response(status=400, body="bad request: unsupported query")
-
-        return await self.do_something(
-            request.remote, dns_query, query_name, query_type
-        )
+        return await self.handle_query(request.remote, data)
 
 
 class DOHServer:
-    def __init__(self, config, sqlite, blocked_domains):
+    def __init__(self, config, sqlite, adsblock):
         self.cache_enable = config.cache.enable
-        self.cache_wip = config.cache.wip
-        self.cache = config.cache.cache
 
         self.hostname = config.doh.hostname
         self.port = config.doh.port
@@ -245,14 +222,17 @@ class DOHServer:
         self.target_mode = config.dns.target_mode
         self.last_target_doh = None
 
-        self.blocked_domains = blocked_domains
+        self.adsblock = adsblock
         self.filepath = config.filepath
 
-        self.session = sqlite.session
+        self.session = sqlite.Session()
         self.sqlite = sqlite
         self.running = True
         self.runner = None
 
+        self.http_client = httpx.AsyncClient(
+            timeout=9.0, transport=httpx.AsyncHTTPTransport(retries=3)
+        )
         self.ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         self.ssl_context.load_cert_chain(
             certfile=f"{self.filepath}/certs/cert.pem",
@@ -261,7 +241,10 @@ class DOHServer:
 
     async def close(self):
         self.running = False
-        await self.runner.cleanup()
+
+        await self.http_client.aclose()
+        if self.runner:
+            await self.runner.cleanup()
 
         logging.debug("local doh server shutting down!")
 
@@ -287,11 +270,16 @@ class DOHServer:
         logging.info(f"local doh server running on {self.hostname}:{self.port}.")
 
         while self.running:
-            await asyncio.sleep(3600)
+            await asyncio.sleep(60)
 
-    async def reload(self, config, blocked_domains):
+    async def reload(self, config, adsblock):
+        await self.close()
+        self.cache_enable = config.cache.enable
+
         self.dns_custom = config.dns.custom
         self.target_doh = config.dns.target_doh
         self.target_mode = config.dns.target_mode
 
-        self.blocked_domains = blocked_domains
+        self.adsblock = adsblock
+        self.filepath = config.filepath
+        await self.listen()

@@ -1,9 +1,12 @@
 # ################################################################################
 # for-development-only
-# 
+#
+# coverage
 # pip-review
 # pyinstaller
 # pytest
+# pytest-asyncio
+# pytest-benchmark
 # pytest-cov
 # ruff
 
@@ -14,7 +17,7 @@
 aiohttp[speedups]
 aiohttp-jinja2
 jinja2
-uvloop
+# uvloop
 
 dnspython
 aioquic
@@ -23,6 +26,7 @@ httpx
 idna
 
 cachetools
+click
 psutil
 pyyaml
 sqlalchemy[asyncio]
