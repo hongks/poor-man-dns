@@ -55,13 +55,12 @@ here are some example scenarios:
 4. install the python dependecies:
    ```
    venv/scripts/activate
-   pip install -r requirements.txt
+   pip install -Ur requirements.txt
    ```
 
 5. create the poor-man-dns config file:
    ```
-   cd run
-   python -u ../app/main.py -de
+   python -u app/main.py -dg
    ```
 
 6. configure the poor-man-dns config file:
@@ -71,14 +70,13 @@ here are some example scenarios:
 
 7. run the poor-man-dns:
    ```
-   cd run
-   python -u ../app/main.py -d
+   python -u app/main.py -d
    ```
 
 8. update repo / pips:
    ```
    git pull origin
-   pip install --upgrade -r requirements.txt
+   pip install -Ur requirements.txt
    ```
 
 
@@ -125,7 +123,7 @@ here are some example scenarios:
 
 3. console support:
    ```
-   python -u app/main -dh
+   python -u app/main.py -dh
    ```
 
 

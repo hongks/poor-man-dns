@@ -200,6 +200,7 @@ def main(adapter, ddns, dns, doh, web, generate, debug, reset, version):
         echo("info", "resetting, removing caches and logs ...")
         tic = time.time()
 
+        Path("./run").mkdir(exist_ok=True)
         for pattern in ["cache.sqlite*", "poor-man-dns.log*"]:
             for file in Path("./run").glob(pattern):
                 if file.exists():
