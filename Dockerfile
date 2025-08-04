@@ -20,7 +20,7 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
 COPY app/ app/
 COPY certs/ certs/
 
-COPY run/config.yml run/.
+COPY app/templates/config.yml run/.
 
 
 # ################################################################################
