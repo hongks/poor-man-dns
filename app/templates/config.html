@@ -64,6 +64,7 @@
                         <th scope="col">#</th>
                         <th scope="col">url</th>
                         <th scope="col">counts</th>
+                        <th scope="col">status</th>
                         <th scope="col">updated on</th>
                     </tr>
                 </thead>
@@ -73,6 +74,7 @@
                         <th scope="row">{{ loop.index }}</th>
                         <td>{{ list.url }}</td>
                         <td>{{ list.count }}</td>
+                        <td>{{ list.status }}</td>
                         <td>{{ list.updated_on }}</td>
                     </tr>
                     {% endfor %}

@@ -179,8 +179,11 @@ class SQLite:
                 row = AdsBlockList(url=data.url, is_active=True, created_on=now)
                 session.add(row)
 
-            row.contents = data.contents
-            row.count = data.count
+            if data.status == "success":
+                row.contents = data.contents
+                row.count = data.count
+
+            row.status = data.status
             row.updated_on = now
 
     def purge(self):

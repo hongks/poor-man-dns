@@ -60,6 +60,7 @@ async def config_handler(request):
         {
             "url": row.url,
             "count": row.count,
+            "status": row.status,
             "updated_on": row.updated_on,
         }
         for row in sqlite.Session()

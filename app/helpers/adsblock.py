@@ -37,6 +37,20 @@ class AdsBlock:
         self.parse("whitelist", self.whitelist)
         return row.updated_on if row else None
 
+    def extract(self, contents):
+        count = 0
+
+        for line in contents:
+            line = line.strip()
+
+            if line and not line.startswith(("!", "#")):
+                domain = line.split()[0].replace("||", "").replace("^", "") + "."
+                self.blocked.add(domain)
+                count += 1
+                # logging.debug(f"parsed {domain} from {line}")
+
+        return count
+
     async def fetch(self):
         logging.info(f"parsing {len(self.blacklist)} adblock lists ...")
         self.blocked.clear()
@@ -48,29 +62,20 @@ class AdsBlock:
             transport=httpx.AsyncHTTPTransport(retries=3),
         ) as client:
             for url in self.blacklist:
-                count = 0
-
                 try:
                     response = await client.get(url)
                     response.raise_for_status()
 
-                    for line in response.text.splitlines():
-                        line = line.strip()
-
-                        if line and not line.startswith(("!", "#")):
-                            domain = (
-                                line.split()[0].replace("||", "").replace("^", "") + "."
-                            )
-                            self.blocked.add(domain)
-                            count += 1
-                            # logging.debug(f"parsed {domain} from {line}")
-
+                    count = self.extract(response.text.splitlines())
                     self.total += count
                     logging.debug(f"+{count}, {url}")
 
                     self.sqlite.update(
                         AdsBlockList(
-                            url=str(response.url), contents=response.text, count=count
+                            url=str(response.url),
+                            contents=response.text,
+                            count=count,
+                            status="success",
                         )
                     )
 
@@ -79,7 +84,12 @@ class AdsBlock:
                     httpx.ConnectTimeout,
                     httpx.ReadTimeout,
                 ) as err:
-                    logging.warning(f"{type(err).__name__}: {url}")
+                    row = self.session.query(AdsBlockList).filter_by(url=url).first()
+                    count = self.extract(row.contents.splitlines()) if row else 0
+
+                    logging.warning(f"+{type(err).__name__}: {url}")
+                    logging.debug(f"+{count}, {url}")
+                    self.sqlite.update(AdsBlockList(url=url, status=type(err).__name__))
 
                 except Exception as err:
                     logging.exception(f"unexpected {err=}, {type(err)=}, {url}")
