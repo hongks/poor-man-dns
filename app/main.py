@@ -189,7 +189,7 @@ def setup_logging(config, sqlite):
     help="show this message and exit.",
 )
 def main(adapter, ddns, dns, doh, web, generate, debug, reset, version):
-    """poor-man-dns: a simple, lightweight dns and doh server"""
+    """poor-man-dns: a simple, lightweight ddns, dns and doh server"""
 
     config = Config()
     if version:  # ###############################################################
