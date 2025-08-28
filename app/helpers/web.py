@@ -141,7 +141,8 @@ async def query_handler(request):
 
     if value:
         rows = (
-            sqlite.session.query(AdsBlockList.url)
+            sqlite.Session()
+            .query(AdsBlockList.url)
             .filter(AdsBlockList.contents.ilike(f"%{value}%"))
             .order_by(AdsBlockList.updated_on.desc())
             .all()

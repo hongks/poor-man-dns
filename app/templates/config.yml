@@ -1,5 +1,5 @@
 # ################################################################################
-# will check the config.xml every 10 minutes.
+# will check config.yml every minute.
 
 # ################################################################################
 # if enable, will connect to the wifi ssid on start. use this cmd to get the ssid:

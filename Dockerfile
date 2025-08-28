@@ -5,7 +5,9 @@ FROM python:3.12-slim-bookworm AS builder
 ENV PYTHONUNBUFFERED 1
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc
+    apt-get install -y gcc && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN python -m venv /opt/venv/
 ENV PATH="/opt/venv/bin:$PATH"
@@ -38,7 +40,11 @@ WORKDIR /poor-man-dns/
 COPY --from=builder /poor-man-dns/ /poor-man-dns/
 COPY --from=builder /opt/venv/ /opt/venv/
 
-USER root
+RUN groupadd -r poor && \
+    useradd -m -r -g poor poor
+RUN chown -R poor:poor /poor-man-dns/
+
+USER poor
 
 ENV PATH="/opt/venv/bin:$PATH"
 
@@ -48,4 +54,4 @@ EXPOSE 53 5050 5053
 
 STOPSIGNAL SIGINT
 
-CMD [ "python",  "-X", "dev", "app/main.py" ]
+CMD [ "python",  "-uX", "dev", "app/main.py" ]

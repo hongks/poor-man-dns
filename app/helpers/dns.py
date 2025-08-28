@@ -228,6 +228,8 @@ class DNSServer:
         logging.debug("local dns server shutting down!")
 
     async def listen(self):
+        loop = asyncio.get_running_loop()
+
         while self.running:
             if self.restart:
                 if self.transport:
@@ -239,7 +241,7 @@ class DNSServer:
 
                 try:
                     self.transport, protocol = await asyncio.wait_for(
-                        asyncio.get_running_loop().create_datagram_endpoint(
+                        loop.create_datagram_endpoint(
                             lambda: DNSHandler(self),
                             local_addr=(self.hostname, self.port),
                         ),
@@ -247,7 +249,7 @@ class DNSServer:
                     )
                     self.restart = False
 
-                except TimeoutError:
+                except asyncio.TimeoutError:
                     self.restart = True
 
                 else:

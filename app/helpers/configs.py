@@ -17,7 +17,7 @@ class Base:
         return str(self.__dict__)
 
 
-# default configs, overide as needed
+# default configs, override as needed
 class Config(Base):
     class Adapter(Base):
         def __init__(self):
@@ -107,17 +107,14 @@ class Config(Base):
 
     # override default configs
     def load(self):
-        file = Path(self.filename)
-        if not file.exists():
-            print(f"config file {self.filename} not found, using defaults.")
-            return None
-
         sha256 = hashlib.sha256()
-        with file.open("rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                sha256.update(chunk)
 
         try:
+            file = Path(self.filename)
+            with file.open("rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    sha256.update(chunk)
+
             with file.open("r") as f:
                 configs = yaml.safe_load(f) or {}
 
@@ -178,6 +175,10 @@ class Config(Base):
                 self.web.enable = configs["web"]["enable"]
                 self.web.hostname = configs["web"]["hostname"]
                 self.web.port = configs["web"]["port"]
+
+        except FileNotFoundError:
+            print(f"config file {self.filename} not found, using defaults.")
+            return None
 
         except yaml.YAMLError as err:
             print(f"error parsing yml file: {err}")
