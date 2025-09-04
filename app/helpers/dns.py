@@ -225,7 +225,7 @@ class DNSServer:
         if self.transport:
             self.transport.close()
 
-        logging.debug("local dns server shutting down!")
+        logging.info("local dns server shutting down!")
 
     async def listen(self):
         loop = asyncio.get_running_loop()

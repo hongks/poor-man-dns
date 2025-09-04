@@ -1,112 +1,131 @@
-import asyncio
 import hashlib
-import selectors
 import socket
 
+from asyncio import DefaultEventLoopPolicy, SelectorEventLoop
+from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
+from selectors import SelectSelector
+from typing import TypeVar
 
 import yaml
 
 from .sqlite import Setting
 
-
-# base class
-class Base:
-    def __str__(self):
-        return str(self.__dict__)
+T = TypeVar("T")
 
 
 # default configs, override as needed
-class Config(Base):
-    class Adapter(Base):
-        def __init__(self):
-            self.enable = False
-            self.reset_on_exit = False
+@dataclass
+class Config:
+    @dataclass
+    class Adapter:
+        enable: bool = False
+        reset_on_exit: bool = False
 
-            self.interface = "wi-fi"
-            self.ssid = "default"
+        interface: str = "wi-fi"
+        ssid: str = "default"
 
-    class AdsBlock(Base):
-        def __init__(self):
-            self.reload = False
+    @dataclass
+    class AdsBlock:
+        reload: bool = False
+        blacklist: list[str] = field(
+            default_factory=lambda: ["https://v.firebog.net/hosts/easyprivacy.txt"]
+        )
 
-            self.blacklist = ("https://v.firebog.net/hosts/easyprivacy.txt",)
-            self.custom = set()
-            self.whitelist = set()
+        custom: set[str] = field(default_factory=set)
+        whitelist: set[str] = field(default_factory=set)
 
-    class Cache(Base):
-        def __init__(self):
-            self.enable = True
-            self.max_size = 1000
-            self.ttl = 600
+    @dataclass
+    class Cache:
+        enable: bool = True
+        max_size: int = 1000
+        ttl: int = 600
 
-    class DDNS(Base):
-        def __init__(self):
-            self.enable = False
-            self.api_key = None
-            self.domain_id = None
-            self.domain_name = None
-            self.interval = 60
-            self.provider = "dynu"
+    @dataclass
+    class DDNS:
+        enable: bool = False
+        api_key: str | None = None
+        domain_id: int | None = None
+        domain_name: str | None = None
+        interval: int = 60
+        provider: str = "dynu"
 
-    class DNS(Base):
-        def __init__(self):
-            self.hostname = "127.0.0.1"
-            self.port = 53
-            self.target_doh = ["https://1.1.1.1/dns-query"]
-            self.target_mode = "dns-message"
+    @dataclass
+    class DNS:
+        hostname: str = "127.0.0.1"
+        port: int = 53
+        target_doh: list[str] = field(
+            default_factory=lambda: ["https://1.1.1.1/dns-query"]
+        )
+        target_mode: str = "dns-message"
 
-            self.custom = {
+        custom: dict[str, str] = field(
+            default_factory=lambda: {
                 "1.0.0.127.in-addr.arpa.": "localhost.",
                 "localhost.": "127.0.0.1",
                 f"{socket.gethostname().lower()}.": "127.0.0.1",
             }
+        )
 
-    class DOH(Base):
-        def __init__(self):
-            self.hostname = "0.0.0.0"
-            self.port = 5053
+    @dataclass
+    class DOH:
+        hostname: str = "127.0.0.1"
+        port: int = 5053
 
-    class Logging(Base):
-        def __init__(self):
-            self.level = "INFO"
-            self.retention = 7
+    @dataclass
+    class DOT:
+        hostname: str = "127.0.0.1"
+        port: int = 853
 
-            self.filename = "./run/poor-man-dns.log"
-            self.format = "%(asctime)s | %(levelname)-7s | %(module)s: %(message)s"
+    @dataclass
+    class Logging:
+        level: str = "INFO"
+        retention: int = 7
 
-    class SQLite(Base):
-        def __init__(self):
-            self.echo = False
-            self.track_modifications = False
-            self.uri = "sqlite:///./run/cache.sqlite"
+        filename: str = "./run/poor-man-dns.log"
+        format: str = "%(asctime)s | %(levelname)-7s | %(module)s: %(message)s"
 
-    class Web(Base):
-        def __init__(self):
-            self.enable = True
-            self.hostname = "127.0.0.1"
-            self.port = 5000
+        def __post_init__(self):
+            self.level = str(self.level).upper()
 
-    def __init__(self):
-        self.filename = "./run/config.yml"
-        self.filepath = Path(".").resolve()
-        self.secret_key = "the-quick-brown-fox-jumps-over-the-lazy-dog!"
-        self.template = "./app/templates/config.yml"
-        self.version = "1.7.0"
+    @dataclass
+    class SQLite:
+        echo: bool = False
+        track_modifications: bool = False
+        uri: str = "sqlite:///./run/cache.sqlite"
 
-        self.adapter = self.Adapter()
-        self.adsblock = self.AdsBlock()
-        self.cache = self.Cache()
-        self.ddns = self.DDNS()
-        self.dns = self.DNS()
-        self.doh = self.DOH()
-        self.logging = self.Logging()
-        self.sqlite = self.SQLite()
-        self.web = self.Web()
+    @dataclass
+    class SSL:
+        certfile: str = "certs/cert.pem"
+        keyfile: str = "certs/key.pem"
+
+    @dataclass
+    class Web:
+        enable: bool = True
+        hostname: str = "127.0.0.1"
+        port: int = 5000
+
+    filename: str = "./run/config.yml"
+    filepath: Path = Path(".").resolve()
+    secret_key: str = "the-quick-brown-fox-jumps-over-the-lazy-dog!"
+    template: str = "./app/templates/config.yml"
+    version: str = "1.7.0"
+
+    adapter: Adapter = field(default_factory=Adapter)
+    adsblock: AdsBlock = field(default_factory=AdsBlock)
+    cache: Cache = field(default_factory=Cache)
+    ddns: DDNS = field(default_factory=DDNS)
+    dns: DNS = field(default_factory=DNS)
+    doh: DOH = field(default_factory=DOH)
+    dot: DOT = field(default_factory=DOT)
+    logging: Logging = field(default_factory=Logging)
+    sqlite: SQLite = field(default_factory=SQLite)
+    ssl: SSL = field(default_factory=SSL)
+    web: Web = field(default_factory=Web)
 
     # override default configs
-    def load(self):
+    def load(self) -> str | None:
         sha256 = hashlib.sha256()
 
         try:
@@ -118,63 +137,38 @@ class Config(Base):
             with file.open("r") as f:
                 configs = yaml.safe_load(f) or {}
 
-                # adapter
-                self.adapter.enable = configs["adapter"]["enable"]
-                self.adapter.interface = configs["adapter"]["interface"]
-                self.adapter.ssid = configs["adapter"]["ssid"]
-                self.adapter.reset_on_exit = configs["adapter"]["reset_on_exit"]
+            dataclass_map = {
+                "adapter": self.adapter,
+                "adsblock": self.adsblock,
+                "cache": self.cache,
+                "ddns": self.ddns,
+                "dns": self.dns,
+                "doh": self.doh,
+                "dot": self.dot,
+                "logging": self.logging,
+                "ssl": self.ssl,
+                "web": self.web,
+            }
 
-                # adsblock
-                self.adsblock.blacklist = sorted(configs["adsblock"]["blacklist"])
-                self.adsblock.custom = set(configs["adsblock"]["custom"])
-                self.adsblock.reload = configs["adsblock"]["reload"]
-                self.adsblock.whitelist = set(configs["adsblock"]["whitelist"])
+            for key, cls in dataclass_map.items():
+                cfg = configs.get(key, {})
+                setattr(self, key, self.parse(cls, cfg))
 
-                # cache
-                self.cache.enable = configs["cache"]["enable"]
-                self.cache.max_size = configs["cache"]["max_size"]
-                self.cache.ttl = configs["cache"]["ttl"]
+            # special handling for dns custom entries
+            buffers = {
+                "1.0.0.127.in-addr.arpa.": "localhost.",
+                "localhost.": "127.0.0.1",
+                f"{socket.gethostname().lower()}.": "127.0.0.1",
+            }
 
-                # ddns
-                self.ddns.enable = configs["ddns"]["enable"]
-                self.ddns.api_key = configs["ddns"]["api_key"]
-                self.ddns.domain_id = configs["ddns"]["domain_id"]
-                self.ddns.domain_name = configs["ddns"]["domain_name"]
-                self.ddns.provider = configs["ddns"]["provider"]
+            for item in configs.get("dns", {}).get("custom", []):
+                try:
+                    key, value = item.split(":")
+                    buffers[f"{key.lower()}."] = value
+                except ValueError:
+                    print(f"invalid custom dns: {item}")
 
-                # dns
-                self.dns.hostname = configs["dns"]["hostname"]
-                self.dns.port = configs["dns"]["port"]
-                self.dns.target_doh = configs["dns"]["target_doh"]
-                self.dns.target_mode = configs["dns"]["target_mode"]
-
-                buffers = {
-                    "1.0.0.127.in-addr.arpa.": "localhost.",
-                    "localhost.": "127.0.0.1",
-                    f"{socket.gethostname().lower()}.": "127.0.0.1",
-                }
-
-                for item in configs["dns"]["custom"]:
-                    try:
-                        key, value = item.split(":")
-                        buffers[f"{key.lower()}."] = value
-                    except ValueError:
-                        print(f"invalid custom dns: {item}")
-
-                self.dns.custom = {key: value for key, value in sorted(buffers.items())}
-
-                # doh
-                self.doh.hostname = configs["doh"]["hostname"]
-                self.doh.port = configs["doh"]["port"]
-
-                # logging
-                self.logging.level = configs["logging"]["level"].upper()
-                self.logging.retention = int(configs["logging"]["retention"])
-
-                # web
-                self.web.enable = configs["web"]["enable"]
-                self.web.hostname = configs["web"]["hostname"]
-                self.web.port = configs["web"]["port"]
+            self.dns.custom = {key: value for key, value in sorted(buffers.items())}
 
         except FileNotFoundError:
             print(f"config file {self.filename} not found, using defaults.")
@@ -190,8 +184,17 @@ class Config(Base):
 
         return sha256.hexdigest()
 
+    # helpers
+    def parse(self, instance: T, cfg: dict) -> T:
+        updates = {
+            f.name: cfg[f.name]
+            for f in fields(instance)
+            if f.name in cfg and cfg[f.name] is not None
+        }
+        return replace(instance, **updates)
+
     # in case config file is different
-    def sync(self, session):
+    def sync(self, session) -> datetime | None:
         sha256 = self.load()
         if not sha256:
             return None
@@ -212,7 +215,7 @@ class Config(Base):
         return now
 
 
-class ConfigSelectorPolicy(asyncio.DefaultEventLoopPolicy):
+class ConfigSelectorPolicy(DefaultEventLoopPolicy):
     def new_event_loop(self):
-        selector = selectors.SelectSelector()
-        return asyncio.SelectorEventLoop(selector)
+        selector = SelectSelector()
+        return SelectorEventLoop(selector)

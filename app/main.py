@@ -15,6 +15,7 @@ from helpers.adsblock import ADSServer
 from helpers.ddns import DDNSServer
 from helpers.dns import DNSServer
 from helpers.doh import DOHServer
+from helpers.dot import DOTServer
 from helpers.web import WEBServer
 
 from helpers.adapter import Adapter
@@ -26,7 +27,7 @@ from helpers.sqlite import SQLite, SQLiteHandler
 # service routines
 
 
-async def service(config, sqlite, *, ddns, dns, doh, web):
+async def service(config, sqlite, *, ddns, dns, doh, dot, web):
     servers = [sqlite]
 
     if web:
@@ -36,7 +37,7 @@ async def service(config, sqlite, *, ddns, dns, doh, web):
         servers.append(DDNSServer(config, sqlite))
 
     ads_server = ADSServer(config, sqlite)
-    if dns or doh:
+    if dns or doh or dot:
         servers.append(ads_server)
 
     if dns:
@@ -44,6 +45,9 @@ async def service(config, sqlite, *, ddns, dns, doh, web):
 
     if doh:
         servers.append(DOHServer(config, sqlite, ads_server))
+
+    if dot:
+        servers.append(DOTServer(config, sqlite, ads_server))
 
     try:
         tasks = [asyncio.create_task(server.listen()) for server in servers]
@@ -154,6 +158,12 @@ def setup_logging(config, sqlite):
     help="start up the doh server.",
 )
 @click.option(
+    "--dot",
+    "-t",
+    is_flag=True,
+    help="start up the dot server.",
+)
+@click.option(
     "--web",
     "-w",
     is_flag=True,
@@ -188,7 +198,7 @@ def setup_logging(config, sqlite):
     "-h",
     help="show this message and exit.",
 )
-def main(adapter, ddns, dns, doh, web, generate, debug, reset, version):
+def main(adapter, ddns, dns, doh, dot, web, generate, debug, reset, version):
     """poor-man-dns: a simple, lightweight ddns, dns and doh server"""
 
     config = Config()
@@ -233,22 +243,21 @@ def main(adapter, ddns, dns, doh, web, generate, debug, reset, version):
         logging.info("skeleton config file generated!")
         return
 
-    services = (ddns, dns, doh, web)
-    _adapter = Adapter(config.adapter)
-
-    if adapter or not any(services):  # ##############################################
-        setup_adapter(config, _adapter)
-        if adapter:
-            return
-
-    # If any service is unset, enable them all
+    services = (ddns, dns, doh, dot, web)
     if not any(services):
-        ddns = dns = doh = web = True
+        # if any service is unset, enable them all
+        ddns = dns = doh = dot = web = True
+
+    if adapter:  # ##############################################################
+        _adapter = Adapter(config.adapter)
+        setup_adapter(config, _adapter)
+        if not any(services):
+            return
 
     asyncio.set_event_loop_policy(ConfigSelectorPolicy())
     try:
         asyncio.run(
-            service(config, sqlite, ddns=ddns, dns=dns, doh=doh, web=web),
+            service(config, sqlite, ddns=ddns, dns=dns, doh=doh, dot=dot, web=web),
             debug=False,
         )
 

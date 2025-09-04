@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import logging
 import re
+import ssl
 
 from collections import OrderedDict
 from datetime import datetime
@@ -247,13 +248,18 @@ class WEBServer:
         self.app = create_app()
         self.shutdown_event = asyncio.Event()
 
+        self.ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        self.ssl_context.load_cert_chain(
+            certfile=config.ssl.certfile, keyfile=config.ssl.keyfile
+        )
+
     async def close(self):
         self.running = False
         self.shutdown_event.set()
         if self.runner:
             await self.runner.cleanup()
 
-        logging.debug("local web server shutting down!")
+        logging.info("local web server shutting down!")
 
     async def listen(self):
         if not self.enable:
@@ -262,7 +268,12 @@ class WEBServer:
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()
 
-        site = web.TCPSite(self.runner, host=self.hostname, port=self.port)
+        site = web.TCPSite(
+            self.runner,
+            host=self.hostname,
+            port=self.port,
+            ssl_context=self.ssl_context,
+        )
         await site.start()
 
         logging.getLogger("aiohttp").setLevel(logging.WARNING)

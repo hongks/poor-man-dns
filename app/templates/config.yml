@@ -62,6 +62,14 @@ doh:
   hostname: "127.0.0.1"
   port: 5053
 
+dot:
+  hostname: "127.0.0.1"
+  port: 853
+
+ssl: # default self-signed certs
+  certfile: "certs/cert.pem"
+  keyfile: "certs/key.pem"
+
 # ################################################################################
 # experimental wip web frontend
 

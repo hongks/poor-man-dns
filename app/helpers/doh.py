@@ -229,24 +229,23 @@ class DOHServer:
         self.sqlite = sqlite
         self.running = True
         self.runner = None
+        self.shutdown_event = asyncio.Event()
 
         self.http_client = httpx.AsyncClient(
             timeout=9.0, transport=httpx.AsyncHTTPTransport(retries=3)
         )
         self.ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         self.ssl_context.load_cert_chain(
-            certfile=f"{self.filepath}/certs/cert.pem",
-            keyfile=f"{self.filepath}/certs/key.pem",
+            certfile=config.ssl.certfile, keyfile=config.ssl.keyfile
         )
 
     async def close(self):
         self.running = False
-
-        await self.http_client.aclose()
+        self.shutdown_event.set()
         if self.runner:
             await self.runner.cleanup()
 
-        logging.debug("local doh server shutting down!")
+        logging.info("local doh server shutting down!")
 
     async def listen(self):
         handler = DOHHandler(self)
@@ -269,8 +268,7 @@ class DOHServer:
         logging.getLogger("aiohttp").setLevel(logging.WARNING)
         logging.info(f"local doh server running on {self.hostname}:{self.port}.")
 
-        while self.running:
-            await asyncio.sleep(60)
+        await self.shutdown_event.wait()
 
     async def reload(self, config, adsblock):
         await self.close()
