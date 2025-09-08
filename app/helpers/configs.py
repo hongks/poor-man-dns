@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from selectors import SelectSelector
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import yaml
 
@@ -127,15 +127,12 @@ class Config:
     # override default configs
     def load(self) -> str | None:
         sha256 = hashlib.sha256()
+        file = Path(self.filename)
 
         try:
-            file = Path(self.filename)
-            with file.open("rb") as f:
-                for chunk in iter(lambda: f.read(4096), b""):
-                    sha256.update(chunk)
-
-            with file.open("r") as f:
-                configs = yaml.safe_load(f) or {}
+            data = file.read_bytes()
+            sha256.update(data)
+            configs: dict[str, Any] = yaml.safe_load(data.decode()) or {}
 
             dataclass_map = {
                 "adapter": self.adapter,

@@ -242,7 +242,6 @@ class WEBServer:
         self.sqlite = sqlite
 
         self.debug = True if config.logging.level == logging.debug else False
-        self.running = True
         self.runner = None
 
         self.app = create_app()
@@ -254,7 +253,6 @@ class WEBServer:
         )
 
     async def close(self):
-        self.running = False
         self.shutdown_event.set()
         if self.runner:
             await self.runner.cleanup()

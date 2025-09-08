@@ -185,6 +185,8 @@ class DOHHandler:
             )
             return web.Response(status=500, body=b"internal server error")
 
+    # aiohttp supports only http v1.1
+    #
     # from base64 import urlsafe_b64encode; import dns.message
     # data = dns.message.make_query("example.com.", "A").to_wire()
     # data = urlsafe_b64encode(data).decode("utf-8").rstrip("=")
@@ -227,7 +229,6 @@ class DOHServer:
 
         self.session = sqlite.Session()
         self.sqlite = sqlite
-        self.running = True
         self.runner = None
         self.shutdown_event = asyncio.Event()
 
@@ -240,7 +241,6 @@ class DOHServer:
         )
 
     async def close(self):
-        self.running = False
         self.shutdown_event.set()
         if self.runner:
             await self.runner.cleanup()
