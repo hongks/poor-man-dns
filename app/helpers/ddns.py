@@ -17,6 +17,7 @@ class DDNSServer:
         self.url = self.provider(config.ddns.provider, config.ddns.domain_id)
         self.last_ipv4 = None
         self.running = True
+        self.shutdown_event = asyncio.Event()
 
     def provider(self, provider, domain_id):
         url = None
@@ -27,7 +28,9 @@ class DDNSServer:
 
     async def close(self):
         self.running = False
-        logging.debug("listener is shutting down!")
+        self.shutdown_event.set()
+
+        logging.info("listener is shutting down!")
 
     async def update(self):
         async with httpx.AsyncClient(
@@ -80,4 +83,11 @@ class DDNSServer:
             if self.config.enable:
                 await self.update()
 
-            await asyncio.sleep(self.config.interval)
+            # await asyncio.sleep(self.config.interval)
+            try:
+                await asyncio.wait_for(
+                    self.shutdown_event.wait(),
+                    timeout=self.config.interval,
+                )
+            except asyncio.TimeoutError:
+                pass  # normal interval wakeup

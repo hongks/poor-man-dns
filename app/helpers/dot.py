@@ -117,6 +117,7 @@ class DOTHandler:
             httpx.ConnectError,
             httpx.ConnectTimeout,
             httpx.HTTPStatusError,
+            httpx.ReadError,
             httpx.ReadTimeout,
         ) as err:
             logging.error(f"{addr} error forward: {cache_keyname}")
@@ -234,16 +235,14 @@ class DOTServer:
         )
 
     async def close(self):
-        await self.http_client.aclose()
         if self.server:
             self.server.close()
             await self.server.wait_closed()
 
+        await self.http_client.aclose()
         logging.info("local dot server shutting down!")
 
     async def listen(self):
-        logging.info(f"local dot server running on {self.hostname}:{self.port}.")
-
         self.server = await asyncio.wait_for(
             asyncio.start_server(
                 lambda reader, writer: DOTHandler(self).handle_client(reader, writer),
@@ -253,6 +252,11 @@ class DOTServer:
             ),
             timeout=3,  # timeout in seconds
         )
+
+        logging.info(f"local dot server running on {self.hostname}:{self.port}.")
+
+        async with self.server:
+            await self.server.serve_forever()
 
     async def reload(self, config, adsblock):
         await self.close()

@@ -172,6 +172,7 @@ class DOHHandler:
             httpx.ConnectError,
             httpx.ConnectTimeout,
             httpx.HTTPStatusError,
+            httpx.ReadError,
             httpx.ReadTimeout,
         ) as err:
             logging.error(f"{addr} error forward: {cache_keyname}")
@@ -242,9 +243,11 @@ class DOHServer:
 
     async def close(self):
         self.shutdown_event.set()
+
         if self.runner:
             await self.runner.cleanup()
 
+        await self.http_client.aclose()
         logging.info("local doh server shutting down!")
 
     async def listen(self):

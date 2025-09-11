@@ -84,7 +84,7 @@ class Config:
         retention: int = 7
 
         filename: str = "./run/poor-man-dns.log"
-        format: str = "%(asctime)s | %(levelname)-7s | %(module)s: %(message)s"
+        format: str = "%(asctime)s  %(levelname)-7s  %(module)-8s  %(message)s"
 
         def __post_init__(self):
             self.level = str(self.level).upper()

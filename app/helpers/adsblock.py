@@ -82,6 +82,7 @@ class AdsBlock:
                 except (
                     httpx.ConnectError,
                     httpx.ConnectTimeout,
+                    httpx.ReadError,
                     httpx.ReadTimeout,
                 ) as err:
                     row = self.session.query(AdsBlockList).filter_by(url=url).first()
@@ -167,7 +168,7 @@ class ADSServer:
 
     async def close(self):
         self.running = False
-        logging.debug("listener is shutting down!")
+        logging.info("listener is shutting down!")
 
     async def load(self):
         now = datetime.now(tz=timezone.utc)

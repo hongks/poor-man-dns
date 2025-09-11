@@ -100,6 +100,7 @@ class DNSHandler(asyncio.DatagramProtocol):
             httpx.ConnectError,
             httpx.ConnectTimeout,
             httpx.HTTPStatusError,
+            httpx.ReadError,
             httpx.ReadTimeout,
         ) as err:
             logging.error(f"{addr} error forward: {cache_keyname}")
@@ -207,7 +208,7 @@ class DNSServer:
         self.last_target_doh = None
 
         self.adsblock = adsblock
-        self.restart = True
+        self.restart = False
         self.running = True
         self.transport = None
 
@@ -221,41 +222,42 @@ class DNSServer:
     async def close(self):
         self.running = False
 
-        await self.http_client.aclose()
         if self.transport:
             self.transport.close()
+            self.transport = None
 
+        await self.http_client.aclose()
         logging.info("local dns server shutting down!")
 
     async def listen(self):
         loop = asyncio.get_running_loop()
 
         while self.running:
-            if self.restart:
+            if not self.transport or self.restart:
+                # clean up old transport
                 if self.transport:
                     self.transport.close()
                     self.transport = None
 
-                    logging.info("attempting to restart local dns server ...")
-                    await asyncio.sleep(1)
+                self.restart = False
+                logging.info("attempting to restart local dns server ...")
+                await asyncio.sleep(1)
 
-                try:
-                    self.transport, protocol = await asyncio.wait_for(
-                        loop.create_datagram_endpoint(
-                            lambda: DNSHandler(self),
-                            local_addr=(self.hostname, self.port),
-                        ),
-                        timeout=3,  # timeout in seconds
-                    )
-                    self.restart = False
+            try:
+                self.transport, protocol = await asyncio.wait_for(
+                    loop.create_datagram_endpoint(
+                        lambda: DNSHandler(self),
+                        local_addr=(self.hostname, self.port),
+                    ),
+                    timeout=3,  # timeout in seconds
+                )
 
-                except asyncio.TimeoutError:
-                    self.restart = True
+                logging.info(
+                    f"local dns server running on {self.hostname}:{self.port}."
+                )
 
-                else:
-                    logging.info(
-                        f"local dns server running on {self.hostname}:{self.port}."
-                    )
+            except asyncio.TimeoutError:
+                self.restart = True
 
             await asyncio.sleep(1)
 

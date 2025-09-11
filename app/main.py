@@ -30,12 +30,6 @@ from helpers.sqlite import SQLite, SQLiteHandler
 async def service(config, sqlite, *, ddns, dns, doh, dot, web):
     servers = [sqlite]
 
-    if web:
-        servers.append(WEBServer(config, sqlite))
-
-    if ddns:
-        servers.append(DDNSServer(config, sqlite))
-
     ads_server = ADSServer(config, sqlite)
     if dns or doh or dot:
         servers.append(ads_server)
@@ -49,9 +43,15 @@ async def service(config, sqlite, *, ddns, dns, doh, dot, web):
     if dot:
         servers.append(DOTServer(config, sqlite, ads_server))
 
+    if web:
+        servers.append(WEBServer(config, sqlite))
+
+    if ddns:
+        servers.append(DDNSServer(config, sqlite))
+
     try:
         tasks = [asyncio.create_task(server.listen()) for server in servers]
-        await asyncio.sleep(5)
+        await asyncio.sleep(3)
         logging.info("press ctrl+c to quit!")
 
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -74,7 +74,7 @@ async def service(config, sqlite, *, ddns, dns, doh, dot, web):
 
 def echo(level, message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
-    click.echo(f"{timestamp} | {level.upper():7} | main: {message}")
+    click.echo(f"{timestamp}  {level.upper():7}  main      {message}")
 
 
 def setup_adapter(config, adapter):
