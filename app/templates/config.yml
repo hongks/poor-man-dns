@@ -89,7 +89,7 @@ logging:
 # adsblock
 
 adsblock:
-  reload: false # true to force reload on first run
+  reload: false  # true to force reload on first run
   custom:
     - "" # localhost:127.0.0.1
 

@@ -18,6 +18,7 @@ pyinstaller --onefile ^
  --hidden-import psutil ^
  --hidden-import sqlalchemy ^
  --hidden-import yaml ^
+ --hidden-import logging.handlers ^
  app\main.py
 
 @echo.
