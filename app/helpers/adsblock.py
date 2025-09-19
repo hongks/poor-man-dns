@@ -10,8 +10,16 @@ from cachetools import TTLCache
 from .sqlite import AdsBlockList, Setting
 
 
+# typing annotations to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .configs import Config
+    from .sqlite import SQLite
+
+
 class AdsBlock:
-    def __init__(self, config, sqlite):
+    def __init__(self, config: "Config", sqlite: "SQLite"):
         self.sqlite = sqlite
         self.session = sqlite.Session()
 
@@ -23,7 +31,7 @@ class AdsBlock:
         self.blocked = set()
         self.total = 0
 
-    def cache(self):
+    def cache(self) -> datetime | None:
         # blocked_domains
         row = self.session.query(Setting).filter_by(key="blocked-domains").first()
         self.blocked = set(row.value.split("\n")) if row else set()
@@ -31,16 +39,16 @@ class AdsBlock:
         # blocked_stats
         row = self.session.query(Setting).filter_by(key="blocked-stats").first()
         stats = row.value if row else "0 out of 0"
+
         logging.info(f"cached blocked domains loaded, {stats}!")
 
         self.parse("custom", self.custom)
         self.parse("whitelist", self.whitelist)
         return row.updated_on if row else None
 
-    def extract(self, contents):
+    def extract(self, contents: str) -> int:
         count = 0
-
-        for line in contents:
+        for line in contents.splitlines():
             line = line.strip()
 
             if line and not line.startswith(("!", "#")):
@@ -66,7 +74,7 @@ class AdsBlock:
                     response = await client.get(url)
                     response.raise_for_status()
 
-                    count = self.extract(response.text.splitlines())
+                    count = self.extract(response.text)
                     self.total += count
                     logging.debug(f"+{count}, {url}")
 
@@ -110,7 +118,7 @@ class AdsBlock:
         logging.info(f"... done, loaded {stats}!")
 
     # parse blacklist, custom, whitelist domains
-    def parse(self, type, domains):
+    def parse(self, type: str, domains: list[str]):
         count, total = 0, 0
         label = "custom blacklist" if type == "custom" else type
 
@@ -137,12 +145,12 @@ class AdsBlock:
 
 
 class ADSServer:
-    def __init__(self, config, sqlite):
+    def __init__(self, config: "Config", sqlite: "SQLite"):
         self.config = config
         self.sqlite = sqlite
         self.session = sqlite.Session()
 
-        self.adsblock = AdsBlock(config, sqlite)
+        self.adsblock = AdsBlock(self.config, self.sqlite)
         self.cache = TTLCache(
             maxsize=self.config.cache.max_size, ttl=self.config.cache.ttl
         )
@@ -152,13 +160,13 @@ class ADSServer:
     def get_blocked_domains(self):
         return self.adsblock.blocked
 
-    def lock(self, key):
+    def lock(self, key: str):
         if key not in self.locks:
             self.locks[key] = asyncio.Lock()
 
         return self.locks[key]
 
-    def set(self, key, value):
+    def set(self, key: str, value: str):
         self.cache[key] = value
         self.unlock(key)
 
@@ -204,9 +212,9 @@ class ADSServer:
                 await self.load()
                 logging.info("... done reload!")
 
-            await asyncio.sleep(60)
+            await asyncio.sleep(30)
 
-    async def get_or_set(self, key, fetch_func):
+    async def get_or_set(self, key: str, fetch_func: callable) -> any:
         async with self.lock(key):
             result = await fetch_func()
 

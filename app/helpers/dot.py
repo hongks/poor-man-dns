@@ -8,11 +8,19 @@ import dns.message
 import dns.rdatatype
 import httpx
 
+from .adsblock import AdsBlock
 from .sqlite import AdsBlockDomain
+
+# typing annotations to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .configs import Config
+    from .sqlite import SQLite
 
 
 class DOTHandler:
-    def __init__(self, server):
+    def __init__(self, server: "DOTServer"):
         self.server = server
 
     # kdig @localhost:5853 +tls -d example.com
@@ -45,8 +53,13 @@ class DOTHandler:
             await writer.wait_closed()
 
     async def forward_to_doh(
-        self, addr, dns_query, query_name, query_type, cache_keyname
-    ):
+        self,
+        addr: tuple,
+        dns_query: dns.message.Message,
+        query_name: str,
+        query_type: str,
+        cache_keyname: str,
+    ) -> dns.message.Message | None:
         response = None
 
         try:
@@ -136,7 +149,7 @@ class DOTHandler:
 
         return response if response else None
 
-    async def handle_request(self, data, addr):
+    async def handle_request(self, data: bytes, addr: tuple) -> dns.message.Message:
         # parse dns message ######################################################
         try:
             dns_query = dns.message.from_wire(data)
@@ -210,7 +223,7 @@ class DOTHandler:
 
 
 class DOTServer:
-    def __init__(self, config, sqlite, adsblock):
+    def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "AdsBlock"):
         self.cache_enable = config.cache.enable
 
         self.hostname = config.dot.hostname
@@ -258,7 +271,7 @@ class DOTServer:
         async with self.server:
             await self.server.serve_forever()
 
-    async def reload(self, config, adsblock):
+    async def reload(self, config: "Config", adsblock: "AdsBlock"):
         await self.close()
         self.cache_enable = config.cache.enable
 

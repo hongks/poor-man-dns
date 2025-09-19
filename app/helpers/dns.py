@@ -7,17 +7,26 @@ import dns.message
 import dns.rdatatype
 import httpx
 
+from .adsblock import AdsBlock
 from .sqlite import AdsBlockDomain
 
 
+# typing annotations to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .configs import Config
+    from .sqlite import SQLite
+
+
 class DNSHandler(asyncio.DatagramProtocol):
-    def __init__(self, server):
+    def __init__(self, server: "DNSServer"):
         self.server = server
 
-    def connection_made(self, transport):
+    def connection_made(self, transport: asyncio.DatagramTransport):
         self.transport = transport
 
-    def datagram_received(self, data, addr):
+    def datagram_received(self, data: bytes, addr: tuple):
         asyncio.create_task(self.handle_request(data, addr))
 
     # https://github.com/python/cpython/issues/91227
@@ -28,8 +37,13 @@ class DNSHandler(asyncio.DatagramProtocol):
     #     logging.error(f"error received, unexpected {err=}, {type(err)=}")
 
     async def forward_to_doh(
-        self, addr, dns_query, query_name, query_type, cache_keyname
-    ):
+        self,
+        addr: tuple,
+        dns_query: dns.message.Message,
+        query_name: str,
+        query_type: str,
+        cache_keyname: str,
+    ) -> dns.message.Message | None:
         response = None
 
         try:
@@ -119,7 +133,7 @@ class DNSHandler(asyncio.DatagramProtocol):
 
         return response if response else None
 
-    async def handle_request(self, data, addr):
+    async def handle_request(self, data: bytes, addr: tuple):
         # parse dns message ######################################################
         try:
             dns_query = dns.message.from_wire(data)
@@ -197,7 +211,7 @@ class DNSHandler(asyncio.DatagramProtocol):
 
 
 class DNSServer:
-    def __init__(self, config, sqlite, adsblock):
+    def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "AdsBlock"):
         self.cache_enable = config.cache.enable
 
         self.hostname = config.dns.hostname
@@ -239,9 +253,9 @@ class DNSServer:
                     self.transport.close()
                     self.transport = None
 
-                self.restart = False
-                logging.info("attempting to restart local dns server ...")
-                await asyncio.sleep(1)
+                    self.restart = False
+                    logging.info("attempting to restart local dns server ...")
+                    await asyncio.sleep(1)
 
             try:
                 self.transport, protocol = await asyncio.wait_for(
@@ -261,7 +275,7 @@ class DNSServer:
 
             await asyncio.sleep(1)
 
-    async def reload(self, config, adsblock):
+    async def reload(self, config: "Config", adsblock: "AdsBlock"):
         await self.close()
         self.cache_enable = config.cache.enable
 

@@ -15,16 +15,24 @@ from aiohttp import web
 from aiohttp_jinja2 import setup as setup_jinja2, render_template
 from sqlalchemy import or_, func
 
-from .configs import Config
-from .sqlite import SQLite, AdsBlockDomain, AdsBlockList, Log, Setting
+from .sqlite import AdsBlockDomain, AdsBlockList, Log, Setting
+
+
+# typing annotations to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .configs import Config
+    from .sqlite import SQLite
+
 
 # define typed app keys
-CONFIG_KEY = web.AppKey("config")
-SQLITE_KEY = web.AppKey("sqlite")
+CONFIG_KEY: str = web.AppKey("config")
+SQLITE_KEY: str = web.AppKey("sqlite")
 
 
 # helper
-def compute_file_sha256(path):
+def compute_file_sha256(path: str | Path) -> str:
     sha256 = hashlib.sha256()
 
     with path.open("rb") as f:
@@ -34,7 +42,7 @@ def compute_file_sha256(path):
     return sha256.hexdigest()
 
 
-async def config_handler(request):
+async def config_handler(request: web.Request):
     config = request.app[CONFIG_KEY]
     sqlite = request.app[SQLITE_KEY]
 
@@ -192,11 +200,7 @@ async def stats_handler(request):
     return render_template("stats.html", request, {"buffers": buffers})
 
 
-def create_app():
-    # load configurations
-    config = Config()
-    sqlite = SQLite(config)
-
+def create_app(config: "Config", sqlite: "SQLite") -> web.Application:
     # initialize aiohttp app
     app = web.Application()
     app[CONFIG_KEY] = config
@@ -232,19 +236,18 @@ def create_app():
 
 
 class WEBServer:
-    def __init__(self, config, sqlite):
+    def __init__(self, config: "Config", sqlite: "SQLite"):
+        self.config = config
+        self.sqlite = sqlite
+
         self.enable = config.web.enable
         self.hostname = config.web.hostname
         self.port = config.web.port
 
-        # not used for now
-        self.session = sqlite.Session()
-        self.sqlite = sqlite
-
         self.debug = True if config.logging.level == logging.debug else False
         self.runner = None
 
-        self.app = create_app()
+        self.app = create_app(self.config, self.sqlite)
         self.shutdown_event = asyncio.Event()
 
         self.ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -254,6 +257,7 @@ class WEBServer:
 
     async def close(self):
         self.shutdown_event.set()
+
         if self.runner:
             await self.runner.cleanup()
 

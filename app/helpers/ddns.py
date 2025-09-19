@@ -3,9 +3,19 @@ import logging
 
 import httpx
 
+from .utility import wait_or_timeout
+
+
+# typing annotations to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .configs import Config
+    from .sqlite import SQLite
+
 
 class DDNSServer:
-    def __init__(self, config, sqlite):
+    def __init__(self, config: "Config", sqlite: "SQLite"):
         self.config = config.ddns
         self.sqlite = sqlite
 
@@ -15,11 +25,12 @@ class DDNSServer:
             "Content-Type": "application/json",
         }
         self.url = self.provider(config.ddns.provider, config.ddns.domain_id)
+
         self.last_ipv4 = None
         self.running = True
         self.shutdown_event = asyncio.Event()
 
-    def provider(self, provider, domain_id):
+    def provider(self, provider: str, domain_id: int) -> str | None:
         url = None
         if provider == "dynu":
             url = f"https://api.dynu.com/v2/dns/{domain_id}"
@@ -32,7 +43,7 @@ class DDNSServer:
 
         logging.info("listener is shutting down!")
 
-    async def update(self):
+    async def update(self) -> bool:
         async with httpx.AsyncClient(
             timeout=9.0,
             transport=httpx.AsyncHTTPTransport(retries=3),
@@ -83,11 +94,4 @@ class DDNSServer:
             if self.config.enable:
                 await self.update()
 
-            # await asyncio.sleep(self.config.interval)
-            try:
-                await asyncio.wait_for(
-                    self.shutdown_event.wait(),
-                    timeout=self.config.interval,
-                )
-            except asyncio.TimeoutError:
-                pass  # normal interval wakeup
+            await wait_or_timeout(self.shutdown_event, self.config.interval)

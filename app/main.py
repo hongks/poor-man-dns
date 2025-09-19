@@ -1,15 +1,12 @@
 import asyncio
 import logging
-import os
 import shutil
 import time
 
 from datetime import datetime
-from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 import click
-import psutil
 
 from helpers.adsblock import ADSServer
 from helpers.ddns import DDNSServer
@@ -20,28 +17,38 @@ from helpers.web import WEBServer
 
 from helpers.adapter import Adapter
 from helpers.configs import Config, ConfigSelectorPolicy
-from helpers.sqlite import SQLite, SQLiteHandler
+from helpers.sqlite import SQLite
+from helpers.utility import echo, setup_adapter, setup_logging
 
 
 # ################################################################################
 # service routines
 
 
-async def service(config, sqlite, *, ddns, dns, doh, dot, web):
+async def service(
+    config: Config,
+    sqlite: SQLite,
+    *,
+    ddns: bool,
+    dns: bool,
+    doh: bool,
+    dot: bool,
+    web: bool,
+):
     servers = [sqlite]
 
-    ads_server = ADSServer(config, sqlite)
+    ads = ADSServer(config, sqlite)
     if dns or doh or dot:
-        servers.append(ads_server)
+        servers.append(ads)
 
     if dns:
-        servers.append(DNSServer(config, sqlite, ads_server))
+        servers.append(DNSServer(config, sqlite, ads))
 
     if doh:
-        servers.append(DOHServer(config, sqlite, ads_server))
+        servers.append(DOHServer(config, sqlite, ads))
 
     if dot:
-        servers.append(DOTServer(config, sqlite, ads_server))
+        servers.append(DOTServer(config, sqlite, ads))
 
     if web:
         servers.append(WEBServer(config, sqlite))
@@ -51,9 +58,9 @@ async def service(config, sqlite, *, ddns, dns, doh, dot, web):
 
     try:
         tasks = [asyncio.create_task(server.listen()) for server in servers]
-        await asyncio.sleep(3)
-        logging.info("press ctrl+c to quit!")
+        await asyncio.sleep(5)
 
+        logging.info("press ctrl+c to quit!")
         await asyncio.gather(*tasks, return_exceptions=True)
 
     except asyncio.CancelledError:
@@ -66,66 +73,6 @@ async def service(config, sqlite, *, ddns, dns, doh, dot, web):
         for server in reversed(servers):
             if server:
                 await server.close()
-
-
-# ################################################################################
-# sub routines
-
-
-def echo(level, message):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
-    click.echo(f"{timestamp}  {level.upper():7}  main      {message}")
-
-
-def setup_adapter(config, adapter):
-    # connect the wifi and nice the process
-    process = psutil.Process(os.getpid())
-
-    if adapter.is_platform_supported():
-        if config.adapter.enable:
-            adapter.set_dns()
-            time.sleep(1)
-
-            adapter.connect()
-            time.sleep(3)
-
-        adapter.get_dns()
-        process.nice(psutil.HIGH_PRIORITY_CLASS)
-
-    else:
-        try:
-            process.nice(-5)
-        except psutil.AccessDenied:
-            logging.warning(
-                "unable to nice, access denied, possibly running under user privilege!",
-            )
-        except Exception as err:
-            logging.exception(f"unexpected {err=}, {type(err)=}")
-
-
-def setup_logging(config, sqlite):
-    # set up logging
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-
-    logging.basicConfig(
-        format=config.logging.format,
-        level=getattr(logging, config.logging.level, logging.INFO),
-        handlers=[
-            console_handler,
-            TimedRotatingFileHandler(
-                config.logging.filename, when="midnight", backupCount=3
-            ),
-            SQLiteHandler(sqlite),
-        ],
-    )
-
-    # ... and silent the others
-    for logger in ["httpcore", "httpx", "paramiko", "urllib3", "watchdog", "werkzeug"]:
-        logging.getLogger(logger).setLevel(logging.WARNING)
-
-    # misc
-    # logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
 
 
 # ################################################################################
@@ -198,7 +145,18 @@ def setup_logging(config, sqlite):
     "-h",
     help="show this message and exit.",
 )
-def main(adapter, ddns, dns, doh, dot, web, generate, debug, reset, version):
+def main(
+    adapter: bool,
+    ddns: bool,
+    dns: bool,
+    doh: bool,
+    dot: bool,
+    web: bool,
+    generate: bool,
+    debug: bool,
+    reset: bool,
+    version: bool,
+):
     """poor-man-dns: a simple, lightweight ddns, dns and doh server"""
 
     config = Config()
@@ -243,16 +201,19 @@ def main(adapter, ddns, dns, doh, dot, web, generate, debug, reset, version):
         logging.info("skeleton config file generated!")
         return
 
-    services = (ddns, dns, doh, dot, web)
-    if not any(services):
-        # if any service is unset, enable them all
-        ddns = dns = doh = dot = web = True
-
-    if adapter:  # ##############################################################
+    services = (dns, doh, dot)  # ################################################
+    if any(services):
         _adapter = Adapter(config.adapter)
         setup_adapter(config, _adapter)
-        if not any(services):
+
+    else:
+        _adapter = Adapter(config.adapter)
+        setup_adapter(config, _adapter)
+        if adapter:
             return
+
+        # if all services are unset, set them all
+        adapter = ddns = dns = doh = dot = web = True
 
     asyncio.set_event_loop_policy(ConfigSelectorPolicy())
     try:

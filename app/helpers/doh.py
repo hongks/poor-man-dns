@@ -11,14 +11,23 @@ import httpx
 
 from aiohttp import web
 
+from .adsblock import AdsBlock
 from .sqlite import AdsBlockDomain
 
 
+# typing annotations to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .configs import Config
+    from .sqlite import SQLite
+
+
 class DOHHandler:
-    def __init__(self, server):
+    def __init__(self, server: "DOHServer"):
         self.server = server
 
-    async def handle_query(self, addr, data):
+    async def handle_query(self, addr: tuple, data: bytes) -> web.Response:
         try:
             dns_query = dns.message.from_wire(data)
             query_name = str(dns_query.question[0].name)
@@ -95,8 +104,13 @@ class DOHHandler:
         )
 
     async def forward_to_doh(
-        self, addr, dns_query, query_name, query_type, cache_keyname
-    ):
+        self,
+        addr: tuple,
+        dns_query: dns.message.Message,
+        query_name: str,
+        query_type: str,
+        cache_keyname: str,
+    ) -> web.Response:
         response = None
 
         try:
@@ -193,7 +207,7 @@ class DOHHandler:
     # data = urlsafe_b64encode(data).decode("utf-8").rstrip("=")
     #
     # curl -kvH "accept: application/dns-message" "https://127.0.0.1:5053/dns-query?dns=<data>"
-    async def do_GET(self, request):
+    async def do_GET(self, request: web.Request) -> web.Response:
         data = await request.text()
         dns_query_wire = request.query.get("dns")
 
@@ -204,7 +218,7 @@ class DOHHandler:
         data = base64.urlsafe_b64decode(dns_query_wire + "==")
         return await self.handle_query(request.remote, data)
 
-    async def do_POST(self, request):
+    async def do_POST(self, request: web.Request) -> web.Response:
         data = await request.read()
 
         if request.content_type != "application/dns-message":
@@ -215,7 +229,7 @@ class DOHHandler:
 
 
 class DOHServer:
-    def __init__(self, config, sqlite, adsblock):
+    def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "AdsBlock"):
         self.cache_enable = config.cache.enable
 
         self.hostname = config.doh.hostname
@@ -273,7 +287,7 @@ class DOHServer:
 
         await self.shutdown_event.wait()
 
-    async def reload(self, config, adsblock):
+    async def reload(self, config: "Config", adsblock: "AdsBlock"):
         await self.close()
         self.cache_enable = config.cache.enable
 

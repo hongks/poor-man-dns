@@ -4,12 +4,20 @@ import time
 
 from collections import deque
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import create_engine, delete, Boolean, Column, DateTime, Integer, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
-Base = declarative_base()
+# typing annotations to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .configs import Config
+
+
+Base: Any = declarative_base()
 
 
 class AdsBlockDomain(Base):
@@ -78,7 +86,7 @@ class Setting(Base):
 
 
 class SQLite:
-    def __init__(self, config):
+    def __init__(self, config: "Config"):
         self.engine = create_engine(config.sqlite.uri, echo=config.sqlite.echo)
         self.Session = sessionmaker(bind=self.engine)
         self.lock = asyncio.Lock()
@@ -144,10 +152,10 @@ class SQLite:
         finally:
             session.close()
 
-    def insert(self, data):
+    def insert(self, data: Any):
         self.inserts.append(data)
 
-    def parse(self, session, data):
+    def parse(self, session: sessionmaker, data: Any):
         now = datetime.now(tz=timezone.utc)
         row = None
 
@@ -205,7 +213,7 @@ class SQLite:
         finally:
             session.close()
 
-    def update(self, data):
+    def update(self, data: Any):
         self.updates.append(data)
 
     async def close(self):
@@ -222,11 +230,11 @@ class SQLite:
 
         while self.running:
             await self.flush()
-            await asyncio.sleep(60)  # run every minute
+            await asyncio.sleep(30)
 
 
 class SQLiteHandler(logging.Handler):
-    def __init__(self, sqlite):
+    def __init__(self, sqlite: SQLite):
         super().__init__()
         self.sqlite = sqlite
 
@@ -235,7 +243,7 @@ class SQLiteHandler(logging.Handler):
         self.sqlite.engine.dispose()
         super().close()
 
-    def emit(self, message):
+    def emit(self, message: str):
         now = datetime.fromtimestamp(message.created, timezone.utc)
         try:
             row = Log(
