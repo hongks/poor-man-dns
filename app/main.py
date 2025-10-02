@@ -66,6 +66,9 @@ async def service(
     except asyncio.CancelledError:
         logging.debug("service tasks cancelled!")
 
+    except KeyboardInterrupt:
+        logging.info("ctrl-c pressed!")
+
     except Exception as err:
         logging.exception(f"unexpected {err=}, {type(err)=}")
 
@@ -168,7 +171,7 @@ def main(
         echo("info", "resetting, removing caches and logs ...")
         tic = time.time()
 
-        Path("./run").mkdir(exist_ok=True)
+        Path("./run").mkdir(parents=True, exist_ok=True)
         for pattern in ["cache.sqlite*", "poor-man-dns.log*"]:
             for file in Path("./run").glob(pattern):
                 if file.exists():
@@ -196,7 +199,7 @@ def main(
             file.rename(f"./run/config_{timestamp}.yml")
             logging.info(f"existing config file renamed to config_{timestamp}.yml")
 
-        Path("./run").mkdir(exist_ok=True)
+        Path("./run").mkdir(parents=True, exist_ok=True)
         shutil.copyfile(config.template, config.filename)
         logging.info("skeleton config file generated!")
         return
@@ -221,9 +224,6 @@ def main(
             service(config, sqlite, ddns=ddns, dns=dns, doh=doh, dot=dot, web=web),
             debug=False,
         )
-
-    except KeyboardInterrupt:
-        logging.info("ctrl-c pressed!")
 
     except Exception as err:
         logging.exception(f"unexpected {err=}, {type(err)=}")

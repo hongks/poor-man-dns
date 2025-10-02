@@ -167,19 +167,18 @@ class Config:
 
             self.dns.custom = {key: value for key, value in sorted(buffers.items())}
 
+            return sha256.hexdigest()
+
         except FileNotFoundError:
             print(f"config file {self.filename} not found, using defaults.")
-            return None
 
         except yaml.YAMLError as err:
             print(f"error parsing yml file: {err}")
-            return None
 
         except Exception as err:
             print(f"unexpected {err=}, {type(err)=}")
-            return None
 
-        return sha256.hexdigest()
+        return None
 
     # helpers
     def parse(self, instance: T, cfg: dict) -> T:

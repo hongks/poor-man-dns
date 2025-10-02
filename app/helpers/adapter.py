@@ -48,16 +48,17 @@ class Adapter:
     ) -> str | None:
         try:
             result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=60,
+                command,  # the shell command to execute (string or list)
+                capture_output=True,  # collect stdout/stderr instead of printing to terminal
+                text=True,  # decode output as str (not bytes) using default encoding (UTF-8)
+                check=True,  # raise CalledProcessError if command exits with non-zero status
+                shell=False,  # run command through the shell (e.g. bash/sh)
+                timeout=60,  # kill process if it runs longer than 60 seconds
             )
             if success_message:
                 logging.info(success_message)
 
-            return result.stdout
+            return result.stdout.strip()
 
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as err:
             logging.error(f"'{command}' failed. error: {err}")

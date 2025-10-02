@@ -46,14 +46,14 @@ class AdsBlock:
         self.parse("whitelist", self.whitelist)
         return row.updated_on if row else None
 
-    def extract(self, contents: str) -> int:
+    def extract(self, contents: str, buffer: set) -> int:
         count = 0
         for line in contents.splitlines():
             line = line.strip()
 
             if line and not line.startswith(("!", "#")):
                 domain = line.split()[0].replace("||", "").replace("^", "") + "."
-                self.blocked.add(domain)
+                buffer.add(domain)
                 count += 1
                 # logging.debug(f"parsed {domain} from {line}")
 
@@ -61,7 +61,7 @@ class AdsBlock:
 
     async def fetch(self):
         logging.info(f"parsing {len(self.blacklist)} adblock lists ...")
-        self.blocked.clear()
+        buffer = set()
 
         async with httpx.AsyncClient(
             verify=False,
@@ -74,7 +74,7 @@ class AdsBlock:
                     response = await client.get(url)
                     response.raise_for_status()
 
-                    count = self.extract(response.text)
+                    count = self.extract(response.text, buffer)
                     self.total += count
                     logging.debug(f"+{count}, {url}")
 
@@ -94,7 +94,7 @@ class AdsBlock:
                     httpx.ReadTimeout,
                 ) as err:
                     row = self.session.query(AdsBlockList).filter_by(url=url).first()
-                    count = self.extract(row.contents.splitlines()) if row else 0
+                    count = self.extract(row.contents) if row else 0
 
                     logging.warning(f"+{type(err).__name__}: {url}")
                     logging.debug(f"+{count}, {url}")
@@ -102,6 +102,10 @@ class AdsBlock:
 
                 except Exception as err:
                     logging.exception(f"unexpected {err=}, {type(err)=}, {url}")
+
+        self.blocked.clear()
+        self.blocked = buffer.copy()
+        buffer.clear()
 
         # blocked_domains
         self.sqlite.update(
