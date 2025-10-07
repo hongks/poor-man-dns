@@ -1,7 +1,7 @@
 # ################################################################################
 # builder
 
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.12-slim AS builder
 ENV PYTHONUNBUFFERED 1
 
 RUN apt-get update && \
@@ -28,7 +28,7 @@ COPY app/templates/config.yml run/.
 # ################################################################################
 # final
 
-FROM python:3.12-slim-bookworm AS final
+FROM python:3.12-slim AS final
 
 RUN apt-get update && \
     apt-get install -y curl && \
@@ -48,9 +48,9 @@ COPY --from=builder /opt/venv/ /opt/venv/
 
 ENV PATH="/opt/venv/bin:$PATH"
 
-HEALTHCHECK CMD curl -fks http://localhost:5050/ || exit 1
+HEALTHCHECK CMD curl -fks https://localhost:5050/ || exit 1
 
-EXPOSE 53 5050 5053
+EXPOSE 53 583 5050 5053
 
 STOPSIGNAL SIGINT
 
