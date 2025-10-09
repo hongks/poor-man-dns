@@ -10,11 +10,18 @@ from sqlalchemy import create_engine, delete, Boolean, Column, DateTime, Integer
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
+# ################################################################################
 # typing annotations to avoid circular imports
+
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .configs import Config
+    from .config import Config
+
+
+# ################################################################################
+# models
 
 
 Base: Any = declarative_base()
@@ -83,6 +90,10 @@ class Setting(Base):
         default=datetime.now(tz=timezone.utc),
         onupdate=datetime.now(tz=timezone.utc),
     )
+
+
+# ################################################################################
+# sqlite wrapper class
 
 
 class SQLite:
@@ -219,18 +230,27 @@ class SQLite:
     async def close(self):
         self.running = False
         await self.flush()
-        logging.debug("listener is shutting down!")
+        logging.info("listener is shutting down!")
 
     async def flush(self):
         async with self.lock:
             self.flushB()
 
     async def listen(self):
-        logging.debug("listener is up and running.")
+        logging.info("listener is up and running.")
 
         while self.running:
             await self.flush()
-            await asyncio.sleep(30)
+
+            # await asyncio.sleep(30)
+            try:
+                await asyncio.wait_for(asyncio.Event().wait(), timeout=30)
+            except asyncio.TimeoutError:
+                pass
+
+
+# ################################################################################
+# sqlite logging handler
 
 
 class SQLiteHandler(logging.Handler):

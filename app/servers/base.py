@@ -1,57 +1,31 @@
-import asyncio
 import logging
 import random
-import ssl
 import time
 
 import dns.message
 import dns.rdatatype
 import httpx
 
-from .adsblock import AdsBlock
-from .sqlite import AdsBlockDomain
+from helpers.sqlite import AdsBlockDomain
 
+
+# ################################################################################
 # typing annotations to avoid circular imports
+
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .configs import Config
-    from .sqlite import SQLite
+    from helpers.adsblock import AdsBlock
+    from helpers.config import Config
+    from helpers.sqlite import SQLite
 
 
-class DOTHandler:
-    def __init__(self, server: "DOTServer"):
-        self.server = server
+# ################################################################################
+# base handler
 
-    # kdig @localhost:5853 +tls -d example.com
-    async def handle_client(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ):
-        addr = writer.get_extra_info("peername")
 
-        try:
-            while True:
-                # dot requires 2-byte length prefix
-                length_bytes = await reader.readexactly(2)
-                length = int.from_bytes(length_bytes, "big")
-                data = await reader.readexactly(length)
-
-                response = await self.handle_request(data, addr)
-                if response:
-                    wire = response.to_wire()
-                    writer.write(len(wire).to_bytes(2, "big") + wire)
-                    await writer.drain()
-
-        except asyncio.IncompleteReadError:
-            pass  # client closed connection
-
-        except Exception as e:
-            logging.error(f"[dot] error: {e}")
-
-        finally:
-            writer.close()
-            await writer.wait_closed()
-
+class BaseHandler:
     async def forward_to_doh(
         self,
         addr: tuple,
@@ -72,7 +46,7 @@ class DOTHandler:
             )
             self.server.last_target_doh = target_doh
 
-            logging.info(f"{addr} forward: {cache_keyname}, {target_doh}")
+            self.server.logger.info(f"{addr} forward: {cache_keyname}, {target_doh}")
             self.server.sqlite.update(
                 AdsBlockDomain(domain=cache_keyname, type="forward")
             )
@@ -124,7 +98,7 @@ class DOTHandler:
                     },
                 )
 
-            logging.debug(f"{addr} response message: {response.to_text()}")
+            self.server.logger.debug(f"{addr} response message: {response.to_text()}")
 
         except (
             httpx.ConnectError,
@@ -133,14 +107,14 @@ class DOTHandler:
             httpx.ReadError,
             httpx.ReadTimeout,
         ) as err:
-            logging.error(f"{addr} error forward: {cache_keyname}")
-            logging.error(f"+{type(err).__name__}, {target_doh}")
+            self.server.logger.error(f"{addr} error forward: {cache_keyname}")
+            self.server.logger.error(f"+{type(err).__name__}, {target_doh}")
 
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.SERVFAIL)
 
         except Exception as err:
-            logging.exception(
+            self.server.logger.exception(
                 f"{addr} error unhandled: {err}\n{cache_keyname}, {target_doh}"
             )
 
@@ -159,30 +133,30 @@ class DOTHandler:
             query_type = dns.rdatatype.to_text(dns_type)
 
             cache_keyname = f"{query_name}:{query_type}"
-            logging.debug(f"{addr} received: {cache_keyname}")
+            self.server.logger.debug(f"{addr} received: {cache_keyname}")
 
         except Exception as err:
             response = dns.message.Message()
             response.set_rcode(dns.rcode.FORMERR)
 
-            logging.exception(
+            self.server.logger.exception(
                 f"{addr} error invalid query: {err}\n{data}\n{data.hex()}"
             )
             return response
 
         # custom dns #############################################################
-        if query_name in self.server.dns_custom and query_type in ["PTR", "A"]:
+        if query_name in self.server.base_custom and query_type in ["PTR", "A"]:
             response = dns.message.make_response(dns_query)
             rrset = dns.rrset.from_text(
                 query_name,
                 300,
                 dns.rdataclass.IN,
                 dns.rdatatype.PTR if query_type == "PTR" else dns.rdatatype.A,
-                self.server.dns_custom[query_name],
+                self.server.base_custom[query_name],
             )
             response.answer.append(rrset)
 
-            logging.info(f"{addr} custom-hit: {cache_keyname}")
+            self.server.logger.info(f"{addr} custom-hit: {cache_keyname}")
             self.server.sqlite.update(
                 AdsBlockDomain(domain=cache_keyname, type="custom-hit")
             )
@@ -193,7 +167,7 @@ class DOTHandler:
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.NXDOMAIN)
 
-            logging.info(f"{addr} blacklisted: {cache_keyname}")
+            self.server.logger.info(f"{addr} blacklisted: {cache_keyname}")
             self.server.sqlite.update(
                 AdsBlockDomain(domain=cache_keyname, type="blacklisted")
             )
@@ -206,7 +180,7 @@ class DOTHandler:
                 response = dns.message.make_response(dns_query)
                 response.answer = cached["response"]
 
-                logging.info(f"{addr} cache-hit: {cache_keyname}")
+                self.server.logger.info(f"{addr} cache-hit: {cache_keyname}")
                 self.server.sqlite.update(
                     AdsBlockDomain(domain=cache_keyname, type="cache-hit")
                 )
@@ -222,19 +196,25 @@ class DOTHandler:
         return response
 
 
-class DOTServer:
+# ################################################################################
+# base server
+
+
+class BaseServer:
     def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "AdsBlock"):
+        name = self.__class__.__name__[:3].lower()
+        self.logger = logging.getLogger(name)
+
         self.cache_enable = config.cache.enable
 
-        self.hostname = config.dot.hostname
-        self.port = config.dot.port
-        self.dns_custom = config.dns.custom
-        self.target_doh = config.dns.target_doh
-        self.target_mode = config.dns.target_mode
+        self.base_custom = config.base.custom
+        self.base_forward = config.base.forward
+
+        self.target_doh = config.base.target_doh
+        self.target_mode = config.base.target_mode
         self.last_target_doh = None
 
         self.adsblock = adsblock
-        self.server = None
 
         self.session = sqlite.Session()
         self.sqlite = sqlite
@@ -242,42 +222,22 @@ class DOTServer:
         self.http_client = httpx.AsyncClient(
             timeout=9.0, transport=httpx.AsyncHTTPTransport(retries=3)
         )
-        self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        self.ssl_context.load_cert_chain(
-            certfile=config.ssl.certfile, keyfile=config.ssl.keyfile
-        )
 
     async def close(self):
-        if self.server:
-            self.server.close()
-            await self.server.wait_closed()
-
-        await self.http_client.aclose()
-        logging.info("local dot server shutting down!")
+        raise NotImplementedError("close() must be implemented by subclass!")
 
     async def listen(self):
-        self.server = await asyncio.wait_for(
-            asyncio.start_server(
-                lambda reader, writer: DOTHandler(self).handle_client(reader, writer),
-                self.hostname,
-                self.port,
-                ssl=self.ssl_context,
-            ),
-            timeout=3,  # timeout in seconds
-        )
-
-        logging.info(f"local dot server running on {self.hostname}:{self.port}.")
-
-        async with self.server:
-            await self.server.serve_forever()
+        raise NotImplementedError("listen() must be implemented by subclass!")
 
     async def reload(self, config: "Config", adsblock: "AdsBlock"):
         await self.close()
         self.cache_enable = config.cache.enable
 
-        self.dns_custom = config.dns.custom
-        self.target_doh = config.dns.target_doh
-        self.target_mode = config.dns.target_mode
+        self.base_custom = config.base.custom
+        self.base_forward = config.base.forward
+
+        self.target_doh = config.base.target_doh
+        self.target_mode = config.base.target_mode
 
         self.adsblock = adsblock
         await self.listen()

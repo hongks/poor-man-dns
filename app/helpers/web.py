@@ -18,12 +18,19 @@ from sqlalchemy import or_, func
 from .sqlite import AdsBlockDomain, AdsBlockList, Log, Setting
 
 
+# ################################################################################
 # typing annotations to avoid circular imports
+
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .configs import Config
-    from .sqlite import SQLite
+    from helpers.config import Config
+    from helpers.sqlite import SQLite
+
+
+# ################################################################################
+# aiohttp
 
 
 # define typed app keys
@@ -261,7 +268,7 @@ class WEBServer:
         if self.runner:
             await self.runner.cleanup()
 
-        logging.info("local web server shutting down!")
+        logging.info("local service shutting down!")
 
     async def listen(self):
         if not self.enable:
@@ -278,7 +285,5 @@ class WEBServer:
         )
         await site.start()
 
-        logging.getLogger("aiohttp").setLevel(logging.WARNING)
-        logging.info(f"local web server running on {self.hostname}:{self.port}.")
-
+        logging.info(f"local service running on {self.hostname}:{self.port}.")
         await self.shutdown_event.wait()

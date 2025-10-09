@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import socket
 
 from asyncio import DefaultEventLoopPolicy, SelectorEventLoop
@@ -15,7 +16,20 @@ from .sqlite import Setting
 T = TypeVar("T")
 
 
+# ################################################################################
+# overrides
+
+
+class ConfigSelectorPolicy(DefaultEventLoopPolicy):
+    def new_event_loop(self):
+        selector = SelectSelector()
+        return SelectorEventLoop(selector)
+
+
+# ################################################################################
 # default configs, override as needed
+
+
 @dataclass
 class Config:
     @dataclass
@@ -29,12 +43,27 @@ class Config:
     @dataclass
     class AdsBlock:
         reload: bool = False
+        custom: set[str] = field(default_factory=set)
+        whitelist: set[str] = field(default_factory=set)
+
         blacklist: list[str] = field(
             default_factory=lambda: ["https://v.firebog.net/hosts/easyprivacy.txt"]
         )
 
-        custom: set[str] = field(default_factory=set)
-        whitelist: set[str] = field(default_factory=set)
+    @dataclass
+    class Base:
+        custom: dict[str, str] = field(
+            default_factory=lambda: {
+                "1.0.0.127.in-addr.arpa.": "localhost.",
+                "localhost.": "127.0.0.1",
+                f"{socket.gethostname().lower()}.": "127.0.0.1",
+            }
+        )
+        forward: set[str] = field(default_factory=set)
+        target_mode: str = "dns-message"  # or "dns-json"
+        target_doh: list[str] = field(
+            default_factory=lambda: ["https://1.1.1.1/dns-query"]
+        )
 
     @dataclass
     class Cache:
@@ -46,27 +75,16 @@ class Config:
     class DDNS:
         enable: bool = False
         api_key: str | None = None
-        domain_id: int | None = None
-        domain_name: str | None = None
         interval: int = 60
         provider: str = "dynu"
+
+        domain_id: int | None = None
+        domain_name: str | None = None
 
     @dataclass
     class DNS:
         hostname: str = "127.0.0.1"
         port: int = 53
-        target_doh: list[str] = field(
-            default_factory=lambda: ["https://1.1.1.1/dns-query"]
-        )
-        target_mode: str = "dns-message"
-
-        custom: dict[str, str] = field(
-            default_factory=lambda: {
-                "1.0.0.127.in-addr.arpa.": "localhost.",
-                "localhost.": "127.0.0.1",
-                f"{socket.gethostname().lower()}.": "127.0.0.1",
-            }
-        )
 
     @dataclass
     class DOH:
@@ -84,7 +102,9 @@ class Config:
         retention: int = 7
 
         filename: str = "./run/poor-man-dns.log"
-        format: str = "%(asctime)s  %(levelname)-7s  %(module)-8s  %(message)s"
+        format: str = (
+            "%(asctime)s  %(levelname)-7s  %(name)-4s  %(module)-8s  %(message)s"
+        )
 
         def __post_init__(self):
             self.level = str(self.level).upper()
@@ -106,14 +126,15 @@ class Config:
         hostname: str = "127.0.0.1"
         port: int = 5000
 
+    filepath: str = "."
     filename: str = "./run/config.yml"
-    filepath: Path = Path(".").resolve()
     secret_key: str = "the-quick-brown-fox-jumps-over-the-lazy-dog!"
     template: str = "./app/templates/config.yml"
-    version: str = "1.7.0"
+    version: str = "1.9.0"
 
     adapter: Adapter = field(default_factory=Adapter)
     adsblock: AdsBlock = field(default_factory=AdsBlock)
+    base: Base = field(default_factory=Base)
     cache: Cache = field(default_factory=Cache)
     ddns: DDNS = field(default_factory=DDNS)
     dns: DNS = field(default_factory=DNS)
@@ -137,6 +158,7 @@ class Config:
             dataclass_map = {
                 "adapter": self.adapter,
                 "adsblock": self.adsblock,
+                "base": self.base,
                 "cache": self.cache,
                 "ddns": self.ddns,
                 "dns": self.dns,
@@ -163,20 +185,20 @@ class Config:
                     key, value = item.split(":")
                     buffers[f"{key.lower()}."] = value
                 except ValueError:
-                    print(f"invalid custom dns: {item}")
+                    logging.error(f"invalid custom dns: {item}")
 
             self.dns.custom = {key: value for key, value in sorted(buffers.items())}
 
             return sha256.hexdigest()
 
         except FileNotFoundError:
-            print(f"config file {self.filename} not found, using defaults.")
+            logging.error(f"config file {self.filename} not found, using defaults.")
 
         except yaml.YAMLError as err:
-            print(f"error parsing yml file: {err}")
+            logging.error(f"error parsing yml file: {err}")
 
         except Exception as err:
-            print(f"unexpected {err=}, {type(err)=}")
+            logging.exception(f"unexpected {err=}, {type(err)=}")
 
         return None
 
@@ -209,9 +231,3 @@ class Config:
 
         session.commit()
         return now
-
-
-class ConfigSelectorPolicy(DefaultEventLoopPolicy):
-    def new_event_loop(self):
-        selector = SelectSelector()
-        return SelectorEventLoop(selector)

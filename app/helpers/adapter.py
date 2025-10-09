@@ -4,11 +4,18 @@ import platform
 import subprocess
 
 
+# ################################################################################
 # typing annotations to avoid circular imports
+
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .configs import Config
+    from .config import Config
+
+
+# ################################################################################
+# adapter
 
 
 class Adapter:

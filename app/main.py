@@ -8,18 +8,18 @@ from pathlib import Path
 
 import click
 
-from helpers.adsblock import ADSServer
-from helpers.ddns import DDNSServer
-from helpers.dns import DNSServer
-from helpers.doh import DOHServer
-from helpers.dot import DOTServer
-from helpers.web import WEBServer
-
 from helpers.adapter import Adapter
-from helpers.configs import Config, ConfigSelectorPolicy
+from helpers.config import Config, ConfigSelectorPolicy
 from helpers.sqlite import SQLite
 from helpers.utility import echo, setup_adapter, setup_logging
 
+from helpers.adsblock import ADSServer
+from helpers.ddns import DDNSServer
+from helpers.web import WEBServer
+
+from servers.dns import DNSServer
+from servers.doh import DOHServer
+from servers.dot import DOTServer
 
 # ################################################################################
 # service routines
@@ -65,9 +65,7 @@ async def service(
 
     except asyncio.CancelledError:
         logging.debug("service tasks cancelled!")
-
-    except KeyboardInterrupt:
-        logging.info("ctrl-c pressed!")
+        raise
 
     except Exception as err:
         logging.exception(f"unexpected {err=}, {type(err)=}")
@@ -160,7 +158,7 @@ def main(
     reset: bool,
     version: bool,
 ):
-    """poor-man-dns: a simple, lightweight ddns, dns and doh server"""
+    """poor-man-dns: a simple lightweight ddns, dns, doh, and dot server"""
 
     config = Config()
     if version:  # ###############################################################
@@ -204,8 +202,7 @@ def main(
         logging.info("skeleton config file generated!")
         return
 
-    services = (dns, doh, dot)  # ################################################
-    if any(services):
+    if any((dns, doh, dot)):  # ##################################################
         _adapter = Adapter(config.adapter)
         setup_adapter(config, _adapter)
 
@@ -224,6 +221,9 @@ def main(
             service(config, sqlite, ddns=ddns, dns=dns, doh=doh, dot=dot, web=web),
             debug=False,
         )
+
+    except KeyboardInterrupt:
+        logging.info("ctrl-c pressed!")
 
     except Exception as err:
         logging.exception(f"unexpected {err=}, {type(err)=}")

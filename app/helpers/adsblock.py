@@ -10,12 +10,19 @@ from cachetools import TTLCache
 from .sqlite import AdsBlockList, Setting
 
 
+# ################################################################################
 # typing annotations to avoid circular imports
+
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .configs import Config
+    from .config import Config
     from .sqlite import SQLite
+
+
+# ################################################################################
+# adsblock cache wrapper
 
 
 class AdsBlock:
@@ -148,6 +155,10 @@ class AdsBlock:
         logging.info(f"loaded {label}ed, {count} out of {total}!")
 
 
+# ################################################################################
+# adsblock wrapper server
+
+
 class ADSServer:
     def __init__(self, config: "Config", sqlite: "SQLite"):
         self.config = config
@@ -216,7 +227,11 @@ class ADSServer:
                 await self.load()
                 logging.info("... done reload!")
 
-            await asyncio.sleep(30)
+            # await asyncio.sleep(30)
+            try:
+                await asyncio.wait_for(asyncio.Event().wait(), timeout=30)
+            except asyncio.TimeoutError:
+                pass
 
     async def get_or_set(self, key: str, fetch_func: callable) -> any:
         async with self.lock(key):

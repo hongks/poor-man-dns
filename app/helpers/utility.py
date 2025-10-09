@@ -12,18 +12,25 @@ import psutil
 from .sqlite import SQLiteHandler
 
 
+# ################################################################################
 # typing annotations to avoid circular imports
+
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .adapter import Adapter
-    from .configs import Config
+    from .config import Config
     from .sqlite import SQLite
+
+
+# ################################################################################
+# utilties
 
 
 def echo(level: str, message: str):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
-    click.echo(f"{timestamp}  {level.upper():7}  main      {message}")
+    click.echo(f"{timestamp}  {level.upper():7}  root  main      {message}")
 
 
 def setup_adapter(config: "Config", adapter: "Adapter"):
@@ -70,7 +77,7 @@ def setup_logging(config: "Config", sqlite: "SQLite"):
     )
 
     # ... and silent the others
-    for logger in ["httpcore", "httpx", "paramiko", "urllib3", "watchdog", "werkzeug"]:
+    for logger in ["asyncio", "httpcore", "httpx", "urllib3"]:
         logging.getLogger(logger).setLevel(logging.WARNING)
 
     # misc

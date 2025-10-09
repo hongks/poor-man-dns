@@ -6,12 +6,19 @@ import httpx
 from .utility import wait_or_timeout
 
 
+# ################################################################################
 # typing annotations to avoid circular imports
+
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .configs import Config
+    from .config import Config
     from .sqlite import SQLite
+
+
+# ################################################################################
+# ddns server
 
 
 class DDNSServer:
