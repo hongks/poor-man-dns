@@ -41,31 +41,6 @@ class Config:
         ssid: str = "default"
 
     @dataclass
-    class AdsBlock:
-        reload: bool = False
-        custom: set[str] = field(default_factory=set)
-        whitelist: set[str] = field(default_factory=set)
-
-        blacklist: list[str] = field(
-            default_factory=lambda: ["https://v.firebog.net/hosts/easyprivacy.txt"]
-        )
-
-    @dataclass
-    class Base:
-        custom: dict[str, str] = field(
-            default_factory=lambda: {
-                "1.0.0.127.in-addr.arpa.": "localhost.",
-                "localhost.": "127.0.0.1",
-                f"{socket.gethostname().lower()}.": "127.0.0.1",
-            }
-        )
-        forward: set[str] = field(default_factory=set)
-        target_mode: str = "dns-message"  # or "dns-json"
-        target_doh: list[str] = field(
-            default_factory=lambda: ["https://1.1.1.1/dns-query"]
-        )
-
-    @dataclass
     class Cache:
         enable: bool = True
         max_size: int = 1000
@@ -74,12 +49,30 @@ class Config:
     @dataclass
     class DDNS:
         enable: bool = False
-        api_key: str | None = None
         interval: int = 60
         provider: str = "dynu"
 
+        api_key: str | None = None
         domain_id: int | None = None
         domain_name: str | None = None
+
+    @dataclass
+    class Forward:
+        custom: dict[str, str] = field(
+            default_factory=lambda: {
+                "1.0.0.127.in-addr.arpa.": "localhost.",
+                "localhost.": "127.0.0.1",
+                f"{socket.gethostname().lower()}.": "127.0.0.1",
+            }
+        )
+        protocol: str = "dns"
+        dns: set[str] = field(default_factory=set)
+
+    @dataclass
+    class Upstream:
+        message: str = "dns-message"  # or "dns-json"
+        protocol: str = "doh"
+        doh: list[str] = field(default_factory=lambda: ["https://1.1.1.1/dns-query"])
 
     @dataclass
     class DNS:
@@ -110,12 +103,6 @@ class Config:
             self.level = str(self.level).upper()
 
     @dataclass
-    class SQLite:
-        echo: bool = False
-        track_modifications: bool = False
-        uri: str = "sqlite:///./run/cache.sqlite"
-
-    @dataclass
     class SSL:
         certfile: str = "certs/cert.pem"
         keyfile: str = "certs/key.pem"
@@ -126,6 +113,22 @@ class Config:
         hostname: str = "127.0.0.1"
         port: int = 5000
 
+    @dataclass
+    class AdsBlock:
+        reload: bool = False
+        custom: set[str] = field(default_factory=set)
+        whitelist: set[str] = field(default_factory=set)
+
+        blacklist: list[str] = field(
+            default_factory=lambda: ["https://v.firebog.net/hosts/easyprivacy.txt"]
+        )
+
+    @dataclass
+    class SQLite:
+        echo: bool = False
+        track_modifications: bool = False
+        uri: str = "sqlite:///./run/cache.sqlite"
+
     filepath: str = "."
     filename: str = "./run/config.yml"
     secret_key: str = "the-quick-brown-fox-jumps-over-the-lazy-dog!"
@@ -133,17 +136,21 @@ class Config:
     version: str = "1.9.0"
 
     adapter: Adapter = field(default_factory=Adapter)
-    adsblock: AdsBlock = field(default_factory=AdsBlock)
-    base: Base = field(default_factory=Base)
     cache: Cache = field(default_factory=Cache)
     ddns: DDNS = field(default_factory=DDNS)
+
+    forward: Forward = field(default_factory=Forward)
+    upstream: Upstream = field(default_factory=Upstream)
     dns: DNS = field(default_factory=DNS)
     doh: DOH = field(default_factory=DOH)
     dot: DOT = field(default_factory=DOT)
+
     logging: Logging = field(default_factory=Logging)
-    sqlite: SQLite = field(default_factory=SQLite)
     ssl: SSL = field(default_factory=SSL)
     web: Web = field(default_factory=Web)
+
+    adsblock: AdsBlock = field(default_factory=AdsBlock)
+    sqlite: SQLite = field(default_factory=SQLite)
 
     # override default configs
     def load(self) -> str | None:
@@ -157,16 +164,17 @@ class Config:
 
             dataclass_map = {
                 "adapter": self.adapter,
-                "adsblock": self.adsblock,
-                "base": self.base,
                 "cache": self.cache,
                 "ddns": self.ddns,
+                "forward": self.forward,
+                "upstream": self.upstream,
                 "dns": self.dns,
                 "doh": self.doh,
                 "dot": self.dot,
                 "logging": self.logging,
                 "ssl": self.ssl,
                 "web": self.web,
+                "adsblock": self.adsblock,
             }
 
             for key, cls in dataclass_map.items():

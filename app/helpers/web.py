@@ -176,10 +176,11 @@ async def stats_handler(request):
 
     buffers = OrderedDict(
         [
-            ("forward", None),
             ("cache-hit", None),
+            ("upstream", None),
             ("blacklisted", None),
             ("custom-hit", None),
+            ("forward", None),
         ]
     )
 

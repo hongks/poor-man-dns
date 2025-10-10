@@ -93,7 +93,7 @@ class Adapter:
         )
 
         if output:
-            logging.info(f"current dns configuration:\n{output}")
+            logging.info(f"current dns configuration:\n\n{output}\n")
 
     # netsh interface ipv4 set dns wi-fi dhcp
     @required_platform("windows")

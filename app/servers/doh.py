@@ -2,6 +2,8 @@ import asyncio
 import base64
 import ssl
 
+import dns.rcode
+
 from aiohttp import web
 
 from .base import BaseHandler, BaseServer
@@ -43,7 +45,9 @@ class DOHHandler(BaseHandler):
             return web.Response(status=400, body=b"bad request: unsupported query")
 
         data = base64.urlsafe_b64decode(dns_query_wire + "==")
-        return await self.handle_query(data, request.remote)
+        return await self.handle_query(
+            data, request.transport.get_extra_info("peername")
+        )
 
     async def do_POST(self, request: web.Request) -> web.Response:
         data = await request.read()
@@ -52,12 +56,14 @@ class DOHHandler(BaseHandler):
             self.logger.error(f"{request.remote} error unsupported query:\n{data}")
             return web.Response(status=400, body=b"bad request: unsupported query")
 
-        return await self.handle_query(data, request.remote)
+        return await self.handle_query(
+            data, request.transport.get_extra_info("peername")
+        )
 
     async def handle_query(self, data: bytes, addr: tuple) -> web.Response:
         response = await self.handle_request(data, addr)
         if response:
-            rcode_name = response.rcode().to_text()
+            rcode_name = dns.rcode.to_text(response.rcode())
             if rcode_name == "FORMERR":
                 return web.Response(status=400, body=b"bad request: invalid query")
 
@@ -79,7 +85,6 @@ class DOHHandler(BaseHandler):
 class DOHServer(BaseServer):
     def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "AdsBlock"):
         super().__init__(config, sqlite, adsblock)
-        self.cache_enable = config.cache.enable
 
         self.hostname = config.doh.hostname
         self.port = config.doh.port

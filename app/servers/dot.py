@@ -45,7 +45,7 @@ class DOTHandler(BaseHandler):
             pass  # client closed connection
 
         except Exception as e:
-            self.logger.error(f"[dot] error: {e}")
+            self.server.logger.error(f"[dot] error: {e}")
 
         finally:
             writer.close()
@@ -93,7 +93,6 @@ class DOTServer(BaseServer):
             )
 
             self.logger.info(f"local service running on {self.hostname}:{self.port}.")
-
             async with self.server:
                 await self.server.serve_forever()
 

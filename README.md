@@ -1,4 +1,4 @@
-# poor-man-dns: a simple, lightweight ddns, dns and doh server
+# poor-man-dns: a simple, lightweight dns and doh server
 
 
 ## overview
@@ -125,6 +125,17 @@ here are some example scenarios:
    ```
    python -u app/main.py -dh
    ```
+4. dynamic dns support:
+   * experimental
+
+5. dns-over-tls support:
+   * experimental
+
+6. forward zone support:
+   * experimental
+
+7. web frontend:
+   * experimental
 
 
 ## troubleshooting

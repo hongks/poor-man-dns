@@ -77,7 +77,7 @@ def setup_logging(config: "Config", sqlite: "SQLite"):
     )
 
     # ... and silent the others
-    for logger in ["asyncio", "httpcore", "httpx", "urllib3"]:
+    for logger in ["aiohttp", "asyncio", "httpcore", "httpx", "urllib3"]:
         logging.getLogger(logger).setLevel(logging.WARNING)
 
     # misc

@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import create_engine, delete, Boolean, Column, DateTime, Integer, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 
 # ################################################################################
@@ -98,7 +99,13 @@ class Setting(Base):
 
 class SQLite:
     def __init__(self, config: "Config"):
-        self.engine = create_engine(config.sqlite.uri, echo=config.sqlite.echo)
+        self.engine = create_engine(
+            config.sqlite.uri,
+            echo=config.sqlite.echo,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,  # thread safe connection sharing
+            pool_pre_ping=True,
+        )
         self.Session = sessionmaker(bind=self.engine)
         self.lock = asyncio.Lock()
 

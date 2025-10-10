@@ -10,10 +10,10 @@
 
 adapter:
   enable: false
+  reset_on_exit: false
+
   interface: "wi-fi"
   ssid: "default"
-
-  reset_on_exit: false
 
 # ################################################################################
 # cache server
@@ -28,35 +28,38 @@ cache:
 
 ddns:
   enable: false
+  interval: 60
+  provider: "dynu"
+
   api_key: ""
   domain_id: 0
   domain_name: ""
-  interval: 60
-  provider: "dynu"
 
 # ################################################################################
 # in windows, not possible to set hostname to 0.0.0.0.
 # in linux, either authbind or docker should work.
 
-dns:
-  hostname: "127.0.0.1"
-  port: 53
-  target_mode: "dns-message" # or "dns-json"
+forward:
+  custom:
+    - "1.0.0.127.in-addr.arpa:localhost."
+    - "localhost:127.0.0.1"
+  protocol: "dns"
+  dns:
+    - "" # example.com:127.0.0.1
 
-  target_doh:
+upstream:
+  message: "dns-message" # or "dns-json"
+  protocol: "doh"
+  doh:
     - "https://1.1.1.1/dns-query"
     - "https://1.0.0.1/dns-query"
     - "https://8.8.8.8/dns-query"
     - "https://8.8.4.4/dns-query"
     - "https://9.9.9.9/dns-query"
 
-  custom:
-    - "1.0.0.127.in-addr.arpa:localhost."
-    - "localhost:127.0.0.1"
-
-# ################################################################################
-# use self-sign cert. one option, use mkcert.
-# or update the certs in the certs folder.
+dns:
+  hostname: "127.0.0.1"
+  port: 53
 
 doh:
   hostname: "127.0.0.1"
@@ -66,18 +69,6 @@ dot:
   hostname: "127.0.0.1"
   port: 853
 
-ssl: # default self-signed certs
-  certfile: "certs/cert.pem"
-  keyfile: "certs/key.pem"
-
-# ################################################################################
-# experimental wip web frontend
-
-web:
-  enable: true
-  hostname: "127.0.0.1"
-  port: 5050
-
 # ################################################################################
 # logging
 
@@ -86,10 +77,28 @@ logging:
   retention: 7
 
 # ################################################################################
+# use self-sign cert. one option, use mkcert.
+# or update the certs in the certs folder.
+#
+# use by doh, dot, web frontend. default self-signed certs.
+
+ssl:
+  certfile: "certs/cert.pem"
+  keyfile: "certs/key.pem"
+
+# ################################################################################
+# experimental wip web frontend.
+
+web:
+  enable: true
+  hostname: "127.0.0.1"
+  port: 5050
+
+# ################################################################################
 # adsblock
 
 adsblock:
-  reload: false  # true to force reload on first run
+  reload: false # true to force reload on first run
   custom:
     - "" # localhost:127.0.0.1
 
