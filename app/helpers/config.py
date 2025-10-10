@@ -60,7 +60,6 @@ class Config:
     class Forward:
         custom: dict[str, str] = field(
             default_factory=lambda: {
-                "1.0.0.127.in-addr.arpa.": "localhost.",
                 "localhost.": "127.0.0.1",
                 f"{socket.gethostname().lower()}.": "127.0.0.1",
             }
@@ -181,22 +180,21 @@ class Config:
                 cfg = configs.get(key, {})
                 setattr(self, key, self.parse(cls, cfg))
 
-            # special handling for dns custom entries
+            # special handling for forward custom entries
             buffers = {
-                "1.0.0.127.in-addr.arpa.": "localhost.",
                 "localhost.": "127.0.0.1",
                 f"{socket.gethostname().lower()}.": "127.0.0.1",
             }
 
-            for item in configs.get("dns", {}).get("custom", []):
+            for item in configs.get("forward", {}).get("custom", []):
                 try:
                     key, value = item.split(":")
                     buffers[f"{key.lower()}."] = value
                 except ValueError:
-                    logging.error(f"invalid custom dns: {item}")
+                    logging.error(f"invalid custom forward: {item}")
 
-            self.dns.custom = {key: value for key, value in sorted(buffers.items())}
-
+            self.forward.custom = buffers.copy()
+            buffers = None
             return sha256.hexdigest()
 
         except FileNotFoundError:

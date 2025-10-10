@@ -37,6 +37,9 @@ class BaseHandler:
     ) -> dns.message.Message:
         target_server = None
         for rule in self.server.forward.dns:
+            if not rule:
+                continue
+
             domain, servers = rule.split(":")
             if query_name.endswith(domain + "."):
                 target_server = servers.split(",")[0]  # use the first server
