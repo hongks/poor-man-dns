@@ -215,18 +215,36 @@ class SQLite:
     def purge(self):
         session = self.Session()
         try:
-            threshold = datetime.now(tz=timezone.utc) - timedelta(days=self.retention)
-            count = session.query(Log).filter(Log.updated_on < threshold).count()
+            tables = [
+                {"table": Log, "name": "logs", "retention": self.retention},
+                {
+                    "table": AdsBlockDomain,
+                    "name": "blocked domain logs",
+                    "retention": 99,
+                },
+            ]
 
-            if count > 0:
-                logging.debug(
-                    f"purge logs earlier than {threshold.strftime('%Y-%m-%d %H:%M:%S')} ..."
+            for table in tables:
+                threshold = datetime.now(tz=timezone.utc) - timedelta(
+                    days=table["retention"]
+                )
+                count = (
+                    session.query(table["table"])
+                    .filter(table["table"].updated_on < threshold)
+                    .count()
                 )
 
-                dele = delete(Log).where(Log.updated_on < threshold)
-                session.execute(dele)
-                session.commit()
-                logging.debug(f"... done, {count} purged!")
+                if count > 0:
+                    logging.debug(
+                        f"purge {table['name']} earlier than {threshold.strftime('%Y-%m-%d %H:%M:%S')} ..."
+                    )
+
+                    dele = delete(table["table"]).where(
+                        table["table"].updated_on < threshold
+                    )
+                    session.execute(dele)
+                    session.commit()
+                    logging.debug(f"... done, {count} purged!")
 
         finally:
             session.close()

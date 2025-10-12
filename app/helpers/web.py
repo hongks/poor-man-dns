@@ -176,11 +176,11 @@ async def stats_handler(request):
 
     buffers = OrderedDict(
         [
-            ("cache-hit", None),
             ("upstream", None),
+            ("cache-hit", None),
             ("blacklisted", None),
-            ("custom-hit", None),
             ("forward", None),
+            ("custom-hit", None),
         ]
     )
 
@@ -190,7 +190,7 @@ async def stats_handler(request):
             .query(AdsBlockDomain)
             .filter_by(type=key)
             .order_by(AdsBlockDomain.count.desc())
-            .limit(20)
+            .limit(30)
             .all()
         )
 
@@ -204,6 +204,7 @@ async def stats_handler(request):
         .order_by(AdsBlockDomain.updated_on.desc())
         .all()
     )
+    buffers.move_to_end("heatmap (utc)", last=False)
 
     return render_template("stats.html", request, {"buffers": buffers})
 

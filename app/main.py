@@ -59,7 +59,7 @@ async def service(
 
     try:
         tasks = [asyncio.create_task(server.listen()) for server in servers]
-        await asyncio.sleep(5)
+        await asyncio.sleep(9)
 
         logging.info("press ctrl+c to quit!")
         await asyncio.gather(*tasks, return_exceptions=True)

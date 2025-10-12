@@ -93,8 +93,7 @@ class DOTServer(BaseServer):
             )
 
             self.logger.info(f"local service running on {self.hostname}:{self.port}.")
-            async with self.server:
-                await self.server.serve_forever()
+            await self.server.serve_forever()
 
         except PermissionError:
             self.logger.error("permission denied, need rights to do so!")

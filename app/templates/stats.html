@@ -5,7 +5,14 @@
 {% block content %}
 <style>
    .card {
+      float: left;
+      min-height: 200px;
       margin: 9px;
+      max-width: 44em;
+   }
+
+   .card:first-child {
+      max-width: 26em;
    }
 
    table td {
@@ -18,9 +25,9 @@
 <hr />
 <p>&nbsp;</p>
 
-<div class="row">
+<div class="row" style="display: flow;">
    {% for key, value in buffers.items() %}
-   <div class="card border-dark mb-3" style="max-width: 44rem;">
+   <div class="card border-dark mb-3">
       <div class="card-header">{{ key }}</div>
       <div class="card-body">
          <p class="card-text">
