@@ -4,21 +4,22 @@
 pyinstaller --onefile ^
  --name "poor-man-dns" ^
  --add-data "app\\helpers\\*.py:helpers" ^
+ --add-data "app\\servers\\*.py:servers" ^
  --add-data "app\\static:app\\static" ^
  --add-data "app\\templates\\*.html:app\\templates" ^
  --add-data "certs\\*.pem:certs" ^
+ --hidden-import logging.handlers ^
  --hidden-import aiohttp ^
  --hidden-import aiohttp_jinja2 ^
+ --hidden-import jinja2 ^
  --hidden-import cachetools ^
  --hidden-import dns.message ^
  --hidden-import dns.query ^
  --hidden-import dns.rdatatype ^
  --hidden-import httpx ^
- --hidden-import jinja2 ^
  --hidden-import psutil ^
  --hidden-import sqlalchemy ^
  --hidden-import yaml ^
- --hidden-import logging.handlers ^
  app\main.py
 
 @echo.
