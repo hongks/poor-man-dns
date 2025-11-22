@@ -99,9 +99,10 @@ class AdsBlock:
                     httpx.ConnectTimeout,
                     httpx.ReadError,
                     httpx.ReadTimeout,
+                    httpx.HTTPStatusError,
                 ) as err:
                     row = self.session.query(AdsBlockList).filter_by(url=url).first()
-                    count = self.extract(row.contents) if row else 0
+                    count = self.extract(row.contents, buffer) if row else 0
 
                     logging.warning(f"+{type(err).__name__}: {url}")
                     logging.debug(f"+{count}, {url}")
@@ -111,8 +112,7 @@ class AdsBlock:
                     logging.exception(f"unexpected {err=}, {type(err)=}, {url}")
 
         self.blocked.clear()
-        self.blocked = buffer.copy()
-        buffer.clear()
+        self.blocked = buffer
 
         # blocked_domains
         self.sqlite.update(

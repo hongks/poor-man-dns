@@ -132,8 +132,8 @@ class BaseHandler:
 
         # blocked domain #########################################################
         if (
-            query_name in self.server.adsblock.get_blocked_domains()
-            or query_type == "PTR"
+            query_type == "PTR"
+            or query_name in self.server.adsblock.get_blocked_domains()
         ):
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.NXDOMAIN)
