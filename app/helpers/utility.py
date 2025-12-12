@@ -1,4 +1,5 @@
 import asyncio
+import io
 import logging
 import os
 
@@ -63,6 +64,12 @@ def setup_logging(config: "Config", sqlite: "SQLite"):
     # set up logging
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
+    console_handler.stream = io.TextIOWrapper(
+        console_handler.stream.detach(),
+        encoding="utf-8",
+        errors="replace",
+        newline="\n"
+    )
 
     logging.basicConfig(
         format=config.logging.format,
@@ -70,7 +77,7 @@ def setup_logging(config: "Config", sqlite: "SQLite"):
         handlers=[
             console_handler,
             TimedRotatingFileHandler(
-                config.logging.filename, when="midnight", backupCount=3
+                config.logging.filename, when="midnight", backupCount=3, encoding="utf-8"
             ),
             SQLiteHandler(sqlite),
         ],

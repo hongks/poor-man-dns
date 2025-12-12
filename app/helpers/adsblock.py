@@ -59,7 +59,10 @@ class AdsBlock:
             line = line.strip()
 
             if line and not line.startswith(("!", "#")):
-                domain = line.split()[0].replace("||", "").replace("^", "") + "."
+                domain = line.split()
+                domain = domain[1] if len(domain) > 1 and not domain[1].startswith(("!", "#")) else domain[0]
+                domain = domain.replace("||", "").replace("^", "") + "."
+
                 buffer.add(domain)
                 count += 1
                 # logging.debug(f"parsed {domain} from {line}")

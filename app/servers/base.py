@@ -171,6 +171,11 @@ class BaseHandler:
         )
         return response
 
+    # import dns.resolver
+    # r = dns.resolver.Resolver(configure=False)
+    # r.nameservers = ["https://cloudflare-dns.com/dns-query"]
+    # query = r.resolve("example.com", "A")
+    # print(query.response)
     async def upstream_doh(
         self,
         addr: tuple,
@@ -252,8 +257,10 @@ class BaseHandler:
             httpx.ReadError,
             httpx.ReadTimeout,
         ) as err:
-            self.server.logger.error(f"{addr} error upstream: {cache_keyname}")
-            self.server.logger.error(f"+{type(err).__name__}, {target_doh}")
+            self.server.logger.error(
+                f"+{type(err).__name__} error"
+                f"{addr} upstream: {target_doh}, {cache_keyname}"
+            )
 
             response = dns.message.make_response(dns_query)
             response.set_rcode(dns.rcode.SERVFAIL)
