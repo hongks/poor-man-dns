@@ -55,7 +55,8 @@ class BaseHandler:
         try:
             loop = asyncio.get_running_loop()
             with socket.socket(
-                socket.AF_INET, socket.SOCK_DGRAM
+                socket.AF_INET,
+                socket.SOCK_DGRAM,
             ) as sock:  # send ipv4 via udp
                 sock.setblocking(False)
                 await loop.sock_sendto(sock, dns_query.to_wire(), (target_server, 53))
@@ -71,6 +72,7 @@ class BaseHandler:
                         "timestamp": time.time(),
                     },
                 )
+
             self.server.logger.debug(f"{addr} response message: {response.to_text()}")
             return response
 
@@ -126,7 +128,10 @@ class BaseHandler:
 
             self.server.logger.info(f"{addr} custom-hit: {cache_keyname}")
             self.server.sqlite.update(
-                AdsBlockDomain(domain=cache_keyname, type="custom-hit")
+                AdsBlockDomain(
+                    domain=cache_keyname,
+                    type="custom-hit",
+                )
             )
             return response
 
@@ -258,8 +263,7 @@ class BaseHandler:
             httpx.ReadTimeout,
         ) as err:
             self.server.logger.error(
-                f"+{type(err).__name__} error"
-                f"{addr} upstream: {target_doh}, {cache_keyname}"
+                f"+{type(err).__name__} error{addr} upstream: {target_doh}, {cache_keyname}"
             )
 
             response = dns.message.make_response(dns_query)

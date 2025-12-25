@@ -562,6 +562,6 @@ async def test_udp_stress_benchmark_types(
         return qps
 
     result = benchmark(lambda: asyncio.run(run_queries(query_count)))
-    assert (
-        result > 50
-    ), f"Queries/sec too low for {record_type} with {query_count} queries"
+    assert result > 50, (
+        f"Queries/sec too low for {record_type} with {query_count} queries"
+    )

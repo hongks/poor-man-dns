@@ -68,7 +68,7 @@ def setup_logging(config: "Config", sqlite: "SQLite"):
         console_handler.stream.detach(),
         encoding="utf-8",
         errors="replace",
-        newline="\n"
+        newline="\n",
     )
 
     logging.basicConfig(
@@ -77,7 +77,10 @@ def setup_logging(config: "Config", sqlite: "SQLite"):
         handlers=[
             console_handler,
             TimedRotatingFileHandler(
-                config.logging.filename, when="midnight", backupCount=3, encoding="utf-8"
+                config.logging.filename,
+                when="midnight",
+                backupCount=3,
+                encoding="utf-8",
             ),
             SQLiteHandler(sqlite),
         ],

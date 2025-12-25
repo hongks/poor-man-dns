@@ -60,7 +60,11 @@ class AdsBlock:
 
             if line and not line.startswith(("!", "#")):
                 domain = line.split()
-                domain = domain[1] if len(domain) > 1 and not domain[1].startswith(("!", "#")) else domain[0]
+                domain = (
+                    domain[1]
+                    if len(domain) > 1 and not domain[1].startswith(("!", "#"))
+                    else domain[0]
+                )
                 domain = domain.replace("||", "").replace("^", "") + "."
 
                 buffer.add(domain)
@@ -170,7 +174,8 @@ class ADSServer:
 
         self.adsblock = AdsBlock(self.config, self.sqlite)
         self.cache = TTLCache(
-            maxsize=self.config.cache.max_size, ttl=self.config.cache.ttl
+            maxsize=self.config.cache.max_size,
+            ttl=self.config.cache.ttl,
         )
         self.locks = {}
         self.running = True

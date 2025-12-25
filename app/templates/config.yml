@@ -1,5 +1,5 @@
 # ################################################################################
-# will check config.yml every minute.
+# will check config.yml every half a minute.
 
 # ################################################################################
 # if enable, will connect to the wifi ssid on start. use this cmd to get the ssid:
@@ -101,7 +101,7 @@ web:
 adsblock:
   reload: false # true to force reload on first run
   custom:
-    - "" # localhost:127.0.0.1
+    - "" # example.com
 
   whitelist:
     - "" # example.com
