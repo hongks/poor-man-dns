@@ -40,11 +40,11 @@ WORKDIR /poor-man-dns/
 COPY --from=builder /poor-man-dns/ /poor-man-dns/
 COPY --from=builder /opt/venv/ /opt/venv/
 
-# RUN groupadd -r poor && \
-#     useradd -m -r -g poor poor
-# RUN chown -R poor:poor /poor-man-dns/
-#
-# USER poor
+RUN groupadd -g 1000 -r poor && \
+    useradd -u 1000 -m -r -g poor poor
+RUN chown -R poor:poor /poor-man-dns/
+
+USER root
 
 ENV PATH="/opt/venv/bin:$PATH"
 

@@ -50,7 +50,12 @@ class BaseHandler:
             return None
 
         self.server.logger.info(f"{addr} forward: {target_server}, {cache_keyname}")
-        self.server.sqlite.update(AdsBlockDomain(domain=cache_keyname, type="forward"))
+        self.server.sqlite.update(
+            AdsBlockDomain(
+                domain=cache_keyname,
+                type="forward",
+            )
+        )
 
         try:
             loop = asyncio.get_running_loop()
@@ -59,9 +64,16 @@ class BaseHandler:
                 socket.SOCK_DGRAM,
             ) as sock:  # send ipv4 via udp
                 sock.setblocking(False)
-                await loop.sock_sendto(sock, dns_query.to_wire(), (target_server, 53))
+                await loop.sock_sendto(
+                    sock,
+                    dns_query.to_wire(),
+                    (target_server, 53),
+                )
 
-                data, _ = await asyncio.wait_for(loop.sock_recvfrom(sock, 4096), 1.5)
+                data, _ = await asyncio.wait_for(
+                    loop.sock_recvfrom(sock, 4096),
+                    1.5,
+                )
                 response = dns.message.from_wire(data)
 
             if self.server.cache.enable:
@@ -93,7 +105,11 @@ class BaseHandler:
 
         return response if response else None
 
-    async def handle_request(self, data: bytes, addr: tuple) -> dns.message.Message:
+    async def handle_request(
+        self,
+        data: bytes,
+        addr: tuple,
+    ) -> dns.message.Message:
         # parse dns message ######################################################
         try:
             dns_query = dns.message.from_wire(data)
@@ -114,8 +130,11 @@ class BaseHandler:
             )
             return response
 
-        # custom dns #############################################################
-        if query_name in self.server.forward.custom and query_type in ["PTR", "A"]:
+        # forward custom dns #####################################################
+        if query_name in self.server.forward.custom and query_type in [
+            "PTR",
+            "A",
+        ]:
             response = dns.message.make_response(dns_query)
             rrset = dns.rrset.from_text(
                 query_name,
@@ -135,7 +154,7 @@ class BaseHandler:
             )
             return response
 
-        # blocked domain #########################################################
+        # blocked domains ########################################################
         if (
             query_type == "PTR"
             or query_name in self.server.adsblock.get_blocked_domains()
@@ -162,12 +181,17 @@ class BaseHandler:
                 )
                 return response
 
-        # forward_dns ############################################################
-        response = await self.forward_dns(addr, dns_query, query_name, cache_keyname)
+        # forward dns ############################################################
+        response = await self.forward_dns(
+            addr,
+            dns_query,
+            query_name,
+            cache_keyname,
+        )
         if response:
             return response
 
-        # upstream_doh ###########################################################
+        # upstream doh ###########################################################
         response = await self.server.adsblock.get_or_set(
             cache_keyname,
             lambda: self.upstream_doh(
@@ -208,7 +232,11 @@ class BaseHandler:
 
             # dns-json ###########################################################
             if self.server.upstream.message == "dns-json":
-                headers = {"accept": "application/dns-json", "accept-encoding": "gzip"}
+                headers = {
+                    "content-type": "application/dns-json",
+                    "accept": "application/dns-json",
+                    "accept-encoding": "gzip",
+                }
                 params = {"name": query_name, "type": query_type}
 
                 doh_response = await self.server.http_client.get(
@@ -223,7 +251,11 @@ class BaseHandler:
                         query_name,
                         answer["TTL"],
                         dns.rdataclass.IN,
-                        dns.rdatatype.from_text(dns.rdatatype.to_text(answer["type"])),
+                        dns.rdatatype.from_text(
+                            dns.rdatatype.to_text(
+                                answer["type"],
+                            )
+                        ),
                         answer["data"],
                     )
                     response.answer.append(rrset)
