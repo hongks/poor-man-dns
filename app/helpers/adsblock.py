@@ -14,7 +14,7 @@ from .sqlite import AdsBlockList, Setting
 # typing annotations to avoid circular imports
 
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from .config import Config
@@ -136,7 +136,7 @@ class AdsBlock:
         logging.info(f"... done, loaded {stats}!")
 
     # parse blacklist, custom, whitelist domains
-    def parse(self, type: str, domains: list[str]):
+    def parse(self, type: str, domains: set[str]):
         count, total = 0, 0
         label = "custom blacklist" if type == "custom" else type
 
@@ -241,7 +241,7 @@ class ADSServer:
             except asyncio.TimeoutError:
                 pass
 
-    async def get_or_set(self, key: str, fetch_func: callable) -> any:
+    async def get_or_set(self, key: str, fetch_func: Callable) -> Any:
         async with self.lock(key):
             result = await fetch_func()
 

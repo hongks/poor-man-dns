@@ -11,7 +11,7 @@ from .base import BaseHandler, BaseServer
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from helpers.adsblock import AdsBlock
+    from helpers.adsblock import ADSServer
     from helpers.config import Config
     from helpers.sqlite import SQLite
 
@@ -58,7 +58,7 @@ class DOTHandler(BaseHandler):
 
 
 class DOTServer(BaseServer):
-    def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "AdsBlock"):
+    def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "ADSServer"):
         super().__init__(config, sqlite, adsblock)
 
         self.hostname = config.dot.hostname

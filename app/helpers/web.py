@@ -34,12 +34,12 @@ if TYPE_CHECKING:
 
 
 # define typed app keys
-CONFIG_KEY: str = web.AppKey("config")
-SQLITE_KEY: str = web.AppKey("sqlite")
+CONFIG_KEY = web.AppKey("config")
+SQLITE_KEY = web.AppKey("sqlite")
 
 
 # helper
-def compute_file_sha256(path: str | Path) -> str:
+def compute_file_sha256(path: Path) -> str:
     sha256 = hashlib.sha256()
 
     with path.open("rb") as f:
@@ -153,7 +153,7 @@ async def license_handler(request):
 async def query_handler(request):
     sqlite = request.app[SQLITE_KEY]
     value = request.match_info.get("value")
-    rows = None
+    rows = []
 
     if value:
         rows = (
@@ -181,10 +181,14 @@ async def stats_handler(request):
             ("blacklisted", None),
             ("forward", None),
             ("custom-hit", None),
+            ("heatmap (utc)", None),
         ]
     )
 
     for key in buffers.keys():
+        if key == "heatmap (utc)":
+            continue
+
         buffers[key] = (
             sqlite.Session()
             .query(AdsBlockDomain)

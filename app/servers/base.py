@@ -5,7 +5,10 @@ import socket
 import time
 
 import dns.message
+import dns.rcode
+import dns.rdataclass
 import dns.rdatatype
+import dns.rrset
 import httpx
 
 from helpers.sqlite import AdsBlockDomain
@@ -18,7 +21,7 @@ from helpers.sqlite import AdsBlockDomain
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from helpers.adsblock import AdsBlock
+    from helpers.adsblock import ADSServer
     from helpers.config import Config
     from helpers.sqlite import SQLite
 
@@ -28,13 +31,16 @@ if TYPE_CHECKING:
 
 
 class BaseHandler:
+    def __init__(self, server):
+        self.server = server
+
     async def forward_dns(
         self,
         addr: tuple,
         dns_query: dns.message.Message,
         query_name: str,
         cache_keyname: str,
-    ) -> dns.message.Message:
+    ) -> dns.message.Message | None:
         target_server = None
         for rule in self.server.forward.dns:
             if not rule:
@@ -214,17 +220,16 @@ class BaseHandler:
         cache_keyname: str,
     ) -> dns.message.Message | None:
         response = None
+        target_doh = self.server.upstream.doh.copy()
+        if self.server.last_target_doh in target_doh:
+            target_doh.remove(self.server.last_target_doh)
+
+        target_doh = (
+            random.choice(target_doh) if target_doh else self.server.last_target_doh
+        )
+        self.server.last_target_doh = target_doh
 
         try:
-            target_doh = self.server.upstream.doh.copy()
-            if self.server.last_target_doh in target_doh:
-                target_doh.remove(self.server.last_target_doh)
-
-            target_doh = (
-                random.choice(target_doh) if target_doh else self.server.last_target_doh
-            )
-            self.server.last_target_doh = target_doh
-
             self.server.logger.info(f"{addr} upstream: {target_doh}, {cache_keyname}")
             self.server.sqlite.update(
                 AdsBlockDomain(domain=cache_keyname, type="upstream")
@@ -317,7 +322,7 @@ class BaseHandler:
 
 
 class BaseServer:
-    def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "AdsBlock"):
+    def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "ADSServer"):
         name = self.__class__.__name__[:3].lower()
         self.logger = logging.getLogger(name)
 
@@ -341,7 +346,7 @@ class BaseServer:
     async def listen(self):
         raise NotImplementedError("listen() must be implemented by subclass!")
 
-    async def reload(self, config: "Config", adsblock: "AdsBlock"):
+    async def reload(self, config: "Config", adsblock: "ADSServer"):
         await self.close()
 
         self.cache = config.cache

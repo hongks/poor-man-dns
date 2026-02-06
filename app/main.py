@@ -5,6 +5,7 @@ import time
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -36,7 +37,7 @@ async def service(
     dot: bool,
     web: bool,
 ):
-    servers = [sqlite]
+    servers: list[Any] = [sqlite]
 
     ads = ADSServer(config, sqlite)
     if dns or doh or dot:

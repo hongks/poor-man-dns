@@ -37,8 +37,8 @@ class DDNSServer:
         self.running = True
         self.shutdown_event = asyncio.Event()
 
-    def provider(self, provider: str, domain_id: int) -> str | None:
-        url = None
+    def provider(self, provider: str, domain_id: int) -> str:
+        url = ""
         if provider == "dynu":
             url = f"https://api.dynu.com/v2/dns/{domain_id}"
 

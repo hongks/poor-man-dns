@@ -2,10 +2,10 @@ import asyncio
 import io
 import logging
 import os
+import time
 
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
-from time import time
 
 import click
 import psutil
@@ -47,7 +47,7 @@ def setup_adapter(config: "Config", adapter: "Adapter"):
             time.sleep(3)
 
         adapter.get_dns()
-        process.nice(psutil.HIGH_PRIORITY_CLASS)
+        process.nice(psutil.HIGH_PRIORITY_CLASS)  # type: ignore[attr-defined]
 
     else:
         try:
@@ -65,7 +65,7 @@ def setup_logging(config: "Config", sqlite: "SQLite"):
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.stream = io.TextIOWrapper(
-        console_handler.stream.detach(),
+        console_handler.stream.detach(),  # type: ignore[attr-defined]
         encoding="utf-8",
         errors="replace",
         newline="\n",

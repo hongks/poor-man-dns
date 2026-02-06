@@ -53,7 +53,7 @@ class Config:
         provider: str = "dynu"
 
         api_key: str | None = None
-        domain_id: int | None = None
+        domain_id: int = 0
         domain_name: str | None = None
 
     @dataclass
@@ -212,10 +212,10 @@ class Config:
     def parse(self, instance: T, cfg: dict) -> T:
         updates = {
             f.name: cfg[f.name]
-            for f in fields(instance)
+            for f in fields(instance)  # type: ignore
             if f.name in cfg and cfg[f.name] is not None
         }
-        return replace(instance, **updates)
+        return replace(instance, **updates)  # type: ignore
 
     # in case config file is different
     def sync(self, session) -> datetime | None:

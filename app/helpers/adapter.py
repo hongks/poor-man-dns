@@ -36,7 +36,7 @@ class Adapter:
 
         return decorator
 
-    def __init__(self, config: "Config"):
+    def __init__(self, config: "Config.Adapter"):
         self.interface = config.interface
         self.ssid = config.ssid
 

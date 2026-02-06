@@ -1,5 +1,7 @@
 import asyncio
 
+import dns.message
+
 from .base import BaseHandler, BaseServer
 
 
@@ -10,7 +12,7 @@ from .base import BaseHandler, BaseServer
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from helpers.adsblock import AdsBlock
+    from helpers.adsblock import ADSServer
     from helpers.config import Config
     from helpers.sqlite import SQLite
 
@@ -29,10 +31,12 @@ class DNSHandler(BaseHandler, asyncio.DatagramProtocol):
     def datagram_received(self, data: bytes, addr: tuple):
         asyncio.create_task(self.handle_request(data, addr))
 
-    async def handle_request(self, data: bytes, addr: tuple):
+    async def handle_request(self, data: bytes, addr: tuple) -> dns.message.Message:
         response = await super().handle_request(data, addr)
         if response:
             self.transport.sendto(response.to_wire(), addr)
+
+        return response
 
     # https://github.com/python/cpython/issues/91227
     # https://github.com/python/cpython/issues/127057
@@ -47,7 +51,7 @@ class DNSHandler(BaseHandler, asyncio.DatagramProtocol):
 
 
 class DNSServer(BaseServer):
-    def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "AdsBlock"):
+    def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "ADSServer"):
         super().__init__(config, sqlite, adsblock)
 
         self.hostname = config.dns.hostname

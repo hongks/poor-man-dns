@@ -4,10 +4,15 @@ import time
 
 from collections import deque
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
-from sqlalchemy import create_engine, delete, Boolean, Column, DateTime, Integer, Text
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine, delete, Boolean, DateTime, Integer, Text
+from sqlalchemy.orm import (
+    declarative_base,
+    mapped_column,
+    sessionmaker,
+    Mapped,
+    Session,
+)
 from sqlalchemy.pool import StaticPool
 
 
@@ -15,7 +20,7 @@ from sqlalchemy.pool import StaticPool
 # typing annotations to avoid circular imports
 
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .config import Config
@@ -30,66 +35,77 @@ Base: Any = declarative_base()
 
 class AdsBlockDomain(Base):
     __tablename__ = "adsblock_domains"
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    domain = Column(Text, index=True)
-    type = Column(Text, index=True)
-    count = Column(Integer, default=0)
+    domain: Mapped[str] = mapped_column(Text, index=True)
+    type: Mapped[str] = mapped_column(Text, index=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
 
-    created_on = Column(DateTime, default=datetime.now(tz=timezone.utc))
-    updated_on = Column(
-        DateTime,
-        default=datetime.now(tz=timezone.utc),
-        onupdate=datetime.now(tz=timezone.utc),
+    created_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(tz=timezone.utc),
+    )
+    updated_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(tz=timezone.utc),
+        onupdate=lambda: datetime.now(tz=timezone.utc),
     )
 
 
 class AdsBlockList(Base):
     __tablename__ = "adsblock_lists"
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    url = Column(Text, unique=True, index=True)
-    contents = Column(Text)
-    count = Column(Integer, default=0)
-    is_active = Column(Boolean)
-    status = Column(Text)
+    url: Mapped[str] = mapped_column(Text, unique=True, index=True)
+    contents: Mapped[str] = mapped_column(Text)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean)
+    status: Mapped[str] = mapped_column(Text)
 
-    created_on = Column(DateTime, default=datetime.now(tz=timezone.utc))
-    updated_on = Column(
-        DateTime,
-        default=datetime.now(tz=timezone.utc),
-        onupdate=datetime.now(tz=timezone.utc),
+    created_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(tz=timezone.utc),
+    )
+    updated_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(tz=timezone.utc),
+        onupdate=lambda: datetime.now(tz=timezone.utc),
     )
 
 
 class Log(Base):
     __tablename__ = "logs"
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    module = Column(Text, index=True)
-    key = Column(Text, index=True)
-    value = Column(Text)
+    module: Mapped[str] = mapped_column(Text, index=True)
+    key: Mapped[str] = mapped_column(Text, index=True)
+    value: Mapped[str] = mapped_column(Text)
 
-    created_on = Column(DateTime, default=datetime.now(tz=timezone.utc))
-    updated_on = Column(
-        DateTime,
-        default=datetime.now(tz=timezone.utc),
-        onupdate=datetime.now(tz=timezone.utc),
+    created_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(tz=timezone.utc),
+    )
+    updated_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(tz=timezone.utc),
+        onupdate=lambda: datetime.now(tz=timezone.utc),
     )
 
 
 class Setting(Base):
     __tablename__ = "settings"
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    key = Column(Text, unique=True, index=True)
-    value = Column(Text)
+    key: Mapped[str] = mapped_column(Text, unique=True, index=True)
+    value: Mapped[str] = mapped_column(Text)
 
-    created_on = Column(DateTime, default=datetime.now(tz=timezone.utc))
-    updated_on = Column(
-        DateTime,
-        default=datetime.now(tz=timezone.utc),
-        onupdate=datetime.now(tz=timezone.utc),
+    created_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc)
+    )
+    updated_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(tz=timezone.utc),
+        onupdate=lambda: datetime.now(tz=timezone.utc),
     )
 
 
@@ -173,7 +189,7 @@ class SQLite:
     def insert(self, data: Any):
         self.inserts.append(data)
 
-    def parse(self, session: sessionmaker, data: Any):
+    def parse(self, session: Session, data: Any):
         now = datetime.now(tz=timezone.utc)
         row = None
 
@@ -288,13 +304,13 @@ class SQLiteHandler(logging.Handler):
         self.sqlite.engine.dispose()
         super().close()
 
-    def emit(self, message: str):
-        now = datetime.fromtimestamp(message.created, timezone.utc)
+    def emit(self, record: logging.LogRecord):
+        now = datetime.fromtimestamp(record.created, timezone.utc)
         try:
             row = Log(
-                module=message.module,
-                key=message.levelname.lower(),
-                value=message.getMessage(),
+                module=record.module,
+                key=record.levelname.lower(),
+                value=record.getMessage(),
                 created_on=now,
                 updated_on=now,
             )

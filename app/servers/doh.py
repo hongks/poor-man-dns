@@ -16,7 +16,7 @@ from .base import BaseHandler, BaseServer
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from helpers.adsblock import AdsBlock
+    from helpers.adsblock import ADSServer
     from helpers.config import Config
     from helpers.sqlite import SQLite
 
@@ -41,27 +41,33 @@ class DOHHandler(BaseHandler):
         dns_query_wire = request.query.get("dns")
 
         if not dns_query_wire:
-            self.logger.error(f"{request.remote} error unsupported query:\n{data}")
+            self.server.logger.error(
+                f"{request.remote} error unsupported query:\n{data}"
+            )
             return web.Response(status=400, body=b"bad request: unsupported query")
 
         data = base64.urlsafe_b64decode(dns_query_wire + "==")
         return await self.handle_query(
-            data, request.transport.get_extra_info("peername")
+            data,
+            request.transport.get_extra_info("peername", default=tuple()),  # type: ignore
         )
 
     async def do_POST(self, request: web.Request) -> web.Response:
         data = await request.read()
 
         if request.content_type != "application/dns-message":
-            self.logger.error(f"{request.remote} error unsupported query:\n{data}")
+            self.server.logger.error(
+                f"{request.remote} error unsupported query:\n{data}"
+            )
             return web.Response(status=400, body=b"bad request: unsupported query")
 
         return await self.handle_query(
-            data, request.transport.get_extra_info("peername")
+            data,
+            request.transport.get_extra_info("peername", default=tuple()),  # type: ignore
         )
 
     async def handle_query(self, data: bytes, addr: tuple) -> web.Response:
-        response = await self.handle_request(data, addr)
+        response = await super().handle_request(data, addr)
         if response:
             rcode_name = dns.rcode.to_text(response.rcode())
             if rcode_name == "FORMERR":
@@ -77,13 +83,15 @@ class DOHHandler(BaseHandler):
                     body=response.to_wire(),
                 )
 
+        return response
+
 
 # ################################################################################
 # doh server
 
 
 class DOHServer(BaseServer):
-    def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "AdsBlock"):
+    def __init__(self, config: "Config", sqlite: "SQLite", adsblock: "ADSServer"):
         super().__init__(config, sqlite, adsblock)
 
         self.hostname = config.doh.hostname
