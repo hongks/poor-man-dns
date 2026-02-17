@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import logging
 import shutil
 import time
@@ -63,6 +64,7 @@ async def service(
         await asyncio.sleep(9)
 
         logging.info("press ctrl+c to quit!")
+        gc.collect()
         await asyncio.gather(*tasks, return_exceptions=True)
 
     except asyncio.CancelledError:

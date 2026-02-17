@@ -135,9 +135,12 @@ class SQLite:
             "busy_timeout": 30000,  # avoid database locked
             "mmap_size": 268435456,  #  memory map the database file
             "foreign_keys": "ON",  # use foreign keys
+            "wal_autocheckpoint": 1000,
+            "journal_size_limit": 67108864,
+            "analysis_limit": 400,
         }
 
-        with self.engine.begin() as conn:
+        with self.engine.connect() as conn:
             for key, value in pragmas.items():
                 conn.exec_driver_sql(f"PRAGMA {key}={value};")
 
@@ -176,6 +179,7 @@ class SQLite:
 
             with self.engine.begin() as conn:
                 conn.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+                conn.exec_driver_sql("PRAGMA optimize")
 
             logging.debug(
                 f"flushed {len(inserts)} inserts, {len(updates)} updates,"
