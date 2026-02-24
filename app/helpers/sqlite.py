@@ -118,9 +118,9 @@ class SQLite:
         self.engine = create_engine(
             config.sqlite.uri,
             echo=config.sqlite.echo,
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 30},
             poolclass=StaticPool,  # thread safe connection sharing
-            pool_pre_ping=True,
+            future=True,
         )
         self.Session = sessionmaker(bind=self.engine)
         self.lock = asyncio.Lock()
@@ -129,13 +129,13 @@ class SQLite:
         pragmas = {
             "journal_mode": "WAL",  # enable Write-Ahead Logging
             "synchronous": "NORMAL",  # reduce sync overhead
-            "cache_size": -64000,  # set cache size (negative for KB)
             "temp_store": "MEMORY",  # use memory for temporary tables
-            "locking_mode": "NORMAL",  # avoid exclusive locking
-            "busy_timeout": 30000,  # avoid database locked
             "mmap_size": 268435456,  #  memory map the database file
             "foreign_keys": "ON",  # use foreign keys
-            "wal_autocheckpoint": 1000,
+            "busy_timeout": 30000,  # avoid database locked
+            "locking_mode": "NORMAL",  # avoid exclusive locking
+            "cache_size": -64000,  # set cache size (negative for KB)
+            "wal_autocheckpoint": 2000,
             "journal_size_limit": 67108864,
             "analysis_limit": 400,
         }
@@ -144,7 +144,9 @@ class SQLite:
             for key, value in pragmas.items():
                 conn.exec_driver_sql(f"PRAGMA {key}={value};")
 
-            conn.exec_driver_sql("VACUUM")  # optimize the database
+            # optimize the database
+            conn.exec_driver_sql("PRAGMA optimize")
+            conn.exec_driver_sql("VACUUM")
 
         Base.metadata.create_all(self.engine)
 
