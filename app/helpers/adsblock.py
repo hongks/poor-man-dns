@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 class AdsBlock:
-    def __init__(self, config: "Config", sqlite: "SQLite"):
+    def __init__(self, config: "Config", sqlite: "SQLite") -> None:
         self.sqlite = sqlite
         self.session = sqlite.Session()
 
@@ -73,7 +73,7 @@ class AdsBlock:
 
         return count
 
-    async def fetch(self):
+    async def fetch(self) -> None:
         logging.info(f"parsing {len(self.blacklist)} adblock lists ...")
         buffer = set()
 
@@ -136,7 +136,7 @@ class AdsBlock:
         logging.info(f"... done, loaded {stats}!")
 
     # parse blacklist, custom, whitelist domains
-    def parse(self, type: str, domains: set[str]):
+    def parse(self, type: str, domains: set[str]) -> None:
         count, total = 0, 0
         label = "custom blacklist" if type == "custom" else type
 

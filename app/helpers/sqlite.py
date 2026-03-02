@@ -129,15 +129,13 @@ class SQLite:
         pragmas = {
             "journal_mode": "WAL",  # enable Write-Ahead Logging
             "synchronous": "NORMAL",  # reduce sync overhead
+            "cache_size": -16384,  # set cache size (negative for KB)
             "temp_store": "MEMORY",  # use memory for temporary tables
-            "mmap_size": 268435456,  #  memory map the database file
+            "busy_timeout": 5000,  # avoid database locked
+            "mmap_size": 67108864,  #  memory map the database file
             "foreign_keys": "ON",  # use foreign keys
-            "busy_timeout": 30000,  # avoid database locked
-            "locking_mode": "NORMAL",  # avoid exclusive locking
-            "cache_size": -64000,  # set cache size (negative for KB)
-            "wal_autocheckpoint": 2000,
-            "journal_size_limit": 67108864,
-            "analysis_limit": 400,
+            "wal_autocheckpoint": 1000,
+            "journal_size_limit": 16777216,
         }
 
         with self.engine.connect() as conn:
