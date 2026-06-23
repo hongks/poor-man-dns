@@ -2,11 +2,9 @@ import hashlib
 import logging
 import socket
 
-from asyncio import DefaultEventLoopPolicy, SelectorEventLoop
 from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from selectors import SelectSelector
 from typing import Any, TypeVar
 
 import yaml
@@ -14,16 +12,6 @@ import yaml
 from .sqlite import Setting
 
 T = TypeVar("T")
-
-
-# ################################################################################
-# overrides
-
-
-class ConfigSelectorPolicy(DefaultEventLoopPolicy):
-    def new_event_loop(self):
-        selector = SelectSelector()
-        return SelectorEventLoop(selector)
 
 
 # ################################################################################

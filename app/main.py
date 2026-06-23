@@ -6,12 +6,13 @@ import time
 
 from datetime import datetime
 from pathlib import Path
+from selectors import SelectSelector
 from typing import Any
 
 import click
 
 from helpers.adapter import Adapter
-from helpers.config import Config, ConfigSelectorPolicy
+from helpers.config import Config
 from helpers.sqlite import SQLite
 from helpers.utility import echo, setup_adapter, setup_logging
 
@@ -219,10 +220,10 @@ def main(
         # if all services are unset, set them all
         adapter = ddns = dns = doh = dot = web = True
 
-    asyncio.set_event_loop_policy(ConfigSelectorPolicy())
     try:
         asyncio.run(
             service(config, sqlite, ddns=ddns, dns=dns, doh=doh, dot=dot, web=web),
+            loop_factory=lambda: asyncio.SelectorEventLoop(SelectSelector()),
             debug=False,
         )
 
